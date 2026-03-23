@@ -22,4 +22,4 @@ DEFAULT_CATEGORIES = {
     },
 }
 
-DEFAULT_WALLETS = ["GoPay", "BCA", "BRI", "DANA", "ShopeePay", "Cash"]
+DEFAULT_WALLETS = ["BCA", "BRI", "GoPay", "ShopeePay", "DANA", "QRIS", "Cash"]

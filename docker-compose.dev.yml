@@ -1,6 +1,5 @@
 services:
   bot:
-    environment:
-      DEV_MODE: "true"
+    command: ["python", "-m", "uvicorn", "api.telegram_webhook:app", "--host", "0.0.0.0", "--port", "3000", "--reload"]
     volumes:
       - .:/app

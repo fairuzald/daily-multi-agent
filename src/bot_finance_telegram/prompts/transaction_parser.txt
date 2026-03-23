@@ -9,6 +9,11 @@ Rules:
 - Normalize values like goceng=5000, ceban=10000, 25 ribu=25000, 2 juta=2000000.
 - Infer dates from hari ini, kemarin, tadi pagi, tadi malam, and barusan.
 - For transfers, fill both account_from and account_to.
+- Prefer these exact `payment_method` values when possible: `BCA`, `BRI`, `GoPay`, `ShopeePay`, `DANA`, `QRIS`, `Cash`.
+- Only use generic fallback values like `E-Wallet`, `Bank Transfer`, or `Other` if the specific provider is genuinely unclear.
+- If the user says `pakai gopay`, `via bca`, `transfer bri`, `pakai dana`, or similar, use that exact provider name instead of a generic label.
+- `category` and `subcategory` are free-form human-friendly labels. They do not need to come from a strict predefined taxonomy.
+- Prefer specific labels from the context, for example `Coffee`, `Tomoro Coffee`, `Electricity Bill`, `Internet`, `Transfer`, `Salary`, instead of forcing everything into generic buckets.
 - Use `investment_in` when money comes back from investment or asset sale into cash.
 - Use `investment_out` when cash is moved into investment or asset purchase.
 - Never invent values when the input is unclear.

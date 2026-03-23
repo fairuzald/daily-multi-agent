@@ -18,8 +18,8 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock README.md ./
 RUN poetry install --only main --no-interaction --no-ansi
 
+COPY api ./api
 COPY src ./src
 COPY scripts ./scripts
 
-CMD ["python", "-m", "bot_finance_telegram.app"]
-
+CMD ["python", "-m", "uvicorn", "api.telegram_webhook:app", "--host", "0.0.0.0", "--port", "3000"]

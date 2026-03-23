@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -238,6 +238,15 @@ class GeminiClient:
         transaction_date = normalized.get("transaction_date")
         if transaction_date in (None, "", "today", "hari ini", "barusan"):
             normalized["transaction_date"] = date.today().isoformat()
+        elif isinstance(transaction_date, str):
+            stripped_date = transaction_date.strip()
+            if stripped_date:
+                try:
+                    normalized["transaction_date"] = datetime.fromisoformat(
+                        stripped_date.replace("Z", "+00:00")
+                    ).date().isoformat()
+                except ValueError:
+                    pass
 
         if normalized.get("tags") is None:
             normalized["tags"] = []
@@ -254,6 +263,24 @@ class GeminiClient:
             normalized["missing_fields"].append("amount")
         if normalized.get("type") != "transfer":
             normalized["account_to"] = ""
+
+        raw_context = " ".join(
+            str(normalized.get(field_name) or "")
+            for field_name in ("raw_input", "merchant_or_source", "description")
+        )
+        normalized["payment_method"] = GeminiClient._normalize_payment_method(
+            normalized.get("payment_method"),
+            raw_context=raw_context,
+        )
+        normalized["account_from"] = GeminiClient._normalize_payment_method(
+            normalized.get("account_from"),
+            raw_context=raw_context,
+        )
+        if normalized.get("type") == "transfer":
+            normalized["account_to"] = GeminiClient._normalize_payment_method(
+                normalized.get("account_to"),
+                raw_context=raw_context,
+            )
 
         if normalized.get("transaction_date"):
             normalized["needs_confirmation"] = bool(normalized.get("missing_fields")) or bool(
@@ -293,3 +320,37 @@ class GeminiClient:
             for field_name in payload.get("missing_fields", [])
             if field_name in required and field_name != "transaction_date"
         ]
+
+    @staticmethod
+    def _normalize_payment_method(value: Any, *, raw_context: str = "") -> str:
+        text = str(value or "").strip()
+        context = f"{text} {raw_context}".lower()
+        if not context.strip():
+            return ""
+
+        if "gopay" in context or "go pay" in context or "go-pay" in context:
+            return "GoPay"
+        if "shopeepay" in context or "shopee pay" in context or "shopee-pay" in context:
+            return "ShopeePay"
+        if "dana" in context:
+            return "DANA"
+        if "bca" in context:
+            return "BCA"
+        if "bri" in context:
+            return "BRI"
+        if "cash" in context or "tunai" in context:
+            return "Cash"
+        if "qris" in context:
+            return "QRIS"
+        if "bank transfer" in context or "transfer bank" in context or text.lower() == "transfer":
+            return "Bank Transfer"
+        if "e-wallet" in context or "ewallet" in context or "dompet digital" in context:
+            if "gopay" in context or "go pay" in context or "go-pay" in context:
+                return "GoPay"
+            if "shopeepay" in context or "shopee pay" in context or "shopee-pay" in context:
+                return "ShopeePay"
+            if "dana" in context:
+                return "DANA"
+            return "E-Wallet"
+
+        return text

@@ -149,7 +149,16 @@ class GoogleSheetsClient:
         return client.open_by_key(self.spreadsheet_id)
 
     def _worksheet(self, name: str):
-        return self._spreadsheet().worksheet(name)
+        worksheet = self._spreadsheet().worksheet(name)
+        expected_header = SHEET_SCHEMAS.get(name)
+        if expected_header:
+            current_header = worksheet.row_values(1)
+            if not current_header:
+                worksheet.append_row(expected_header)
+            elif current_header != expected_header:
+                worksheet.clear()
+                worksheet.append_row(expected_header)
+        return worksheet
 
     def _refresh_transaction_date_merges(self) -> None:
         spreadsheet = self._spreadsheet()

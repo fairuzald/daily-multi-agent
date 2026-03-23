@@ -28,15 +28,19 @@ class SummaryService:
             for item in transactions
             if item.status != TransactionStatus.DELETED and item.transaction_date.strftime("%Y-%m") == month
         ]
+        return self.build_period_summary(month, month_transactions, budgets or [])
+
+    def build_period_summary(
+        self,
+        period_label: str,
+        transactions: list[TransactionRecord],
+        budgets: list[BudgetRecord] | None = None,
+    ) -> MonthlySummary:
         budgets = budgets or []
 
-        income = [
-            item for item in month_transactions if item.type in {TransactionType.INCOME, TransactionType.INVESTMENT_IN}
-        ]
-        expenses = [
-            item for item in month_transactions if item.type in {TransactionType.EXPENSE, TransactionType.INVESTMENT_OUT}
-        ]
-        transfers = [item for item in month_transactions if item.type == TransactionType.TRANSFER]
+        income = [item for item in transactions if item.type in {TransactionType.INCOME, TransactionType.INVESTMENT_IN}]
+        expenses = [item for item in transactions if item.type in {TransactionType.EXPENSE, TransactionType.INVESTMENT_OUT}]
+        transfers = [item for item in transactions if item.type == TransactionType.TRANSFER]
 
         total_income = sum(item.amount for item in income)
         total_expense = sum(item.amount for item in expenses)
@@ -48,7 +52,7 @@ class SummaryService:
         income_totals = self._group_by_source(income)
 
         overview = MonthlyOverview(
-            month=month,
+            month=period_label,
             total_income=total_income,
             total_expense=total_expense,
             total_transfer=total_transfer,
@@ -58,7 +62,7 @@ class SummaryService:
             largest_income_source=max(income_totals, key=income_totals.get, default=""),
         )
 
-        budget_map = {item.category_name: item.budget_amount for item in budgets if item.month == month}
+        budget_map = {item.category_name: item.budget_amount for item in budgets if item.month == period_label}
         expense_categories = []
         for category, total in sorted(expense_totals.items(), key=lambda pair: pair[1], reverse=True):
             budget_amount = budget_map.get(category, 0)
@@ -66,7 +70,7 @@ class SummaryService:
             share = round(total / total_expense, 4) if total_expense else 0.0
             expense_categories.append(
                 CategorySummary(
-                    month=month,
+                    month=period_label,
                     category=category,
                     total_amount=total,
                     budget_amount=budget_amount,
@@ -79,7 +83,7 @@ class SummaryService:
         for source, total in sorted(income_totals.items(), key=lambda pair: pair[1], reverse=True):
             income_sources.append(
                 IncomeSourceSummary(
-                    month=month,
+                    month=period_label,
                     source=source,
                     total_amount=total,
                     percent_of_total_income=round(total / total_income, 4) if total_income else 0.0,
@@ -87,7 +91,7 @@ class SummaryService:
             )
 
         account_balances = self._build_account_balances(expenses, income, transfers)
-        insights = self._build_insights(month, overview, expense_categories, month_transactions)
+        insights = self._build_insights(period_label, overview, expense_categories, transactions)
 
         return MonthlySummary(
             overview=overview,
@@ -114,7 +118,7 @@ class SummaryService:
             for index, item in enumerate(summary.expense_categories[:3], start=1):
                 lines.append(f"{index}. {item.category} Rp{item.total_amount:,}".replace(",", "."))
         else:
-            lines.append("No expense transactions in this month.")
+            lines.append("No expense transactions in this period.")
         if summary.insights:
             lines.extend(["", "What to improve:"])
             for item in summary.insights[:3]:
@@ -223,7 +227,7 @@ class SummaryService:
                 ImprovementInsight(
                     month=month,
                     insight_type="transfer_activity",
-                    insight_text=f"Transfer movement this month: Rp{transfer_total:,}".replace(",", "."),
+                    insight_text=f"Transfer movement in this period: Rp{transfer_total:,}".replace(",", "."),
                     priority="low",
                 )
             )
@@ -249,7 +253,7 @@ class SummaryService:
                 ImprovementInsight(
                     month=month,
                     insight_type="positive",
-                    insight_text="Spending pattern looks stable this month.",
+                    insight_text="Spending pattern looks stable in this period.",
                     priority="low",
                 )
             )

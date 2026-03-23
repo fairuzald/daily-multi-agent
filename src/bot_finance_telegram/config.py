@@ -19,7 +19,6 @@ class Settings:
     google_sheet_id: str = ""
     google_service_account_json: str = ""
     database_url: str = ""
-    dev_mode: bool = False
     default_currency: str = "IDR"
     default_timezone: str = "Asia/Jakarta"
     low_confidence_threshold: float = 0.8
@@ -33,7 +32,6 @@ class Settings:
             google_sheet_id=os.getenv("GOOGLE_SHEET_ID", ""),
             google_service_account_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", ""),
             database_url=os.getenv("DATABASE_URL", ""),
-            dev_mode=os.getenv("DEV_MODE", "").lower() in {"1", "true", "yes", "on"},
             default_currency=os.getenv("DEFAULT_CURRENCY", "IDR"),
             default_timezone=os.getenv("DEFAULT_TIMEZONE", "Asia/Jakarta"),
             low_confidence_threshold=float(os.getenv("LOW_CONFIDENCE_THRESHOLD", "0.8")),

@@ -12,11 +12,12 @@ Personal finance Telegram bot that logs Indonesian transactions into Google Shee
 - Track daily spending across GoPay, BCA, BRI, DANA, and ShopeePay
 - Lock the bot to one Telegram owner account
 - Configure the active Google Sheet from chat by sending the sheet link
-- Run locally with Poetry or in Docker Compose
+- Run locally or in Docker Compose through the same FastAPI webhook flow
 
 ## Project Layout
 
-- `src/bot_finance_telegram/app.py`: Telegram entrypoint
+- `api/telegram_webhook.py`: FastAPI webhook entrypoint
+- `src/bot_finance_telegram/app.py`: Telegram update callbacks and error handling
 - `src/bot_finance_telegram/handlers.py`: bot workflows
 - `src/bot_finance_telegram/services/gemini_client.py`: Gemini integration
 - `src/bot_finance_telegram/services/sheets_client.py`: Google Sheets integration
@@ -52,19 +53,13 @@ Required tabs:
 - `Categories`
 - `Summary`
 
-## Run The Bot
+## Run Locally
 
 ```bash
-poetry run python -m bot_finance_telegram.app
+poetry run uvicorn api.telegram_webhook:app --reload --port 3000
 ```
 
-## Run The Bot In Dev Mode
-
-```bash
-DEV_MODE=true poetry run python -m bot_finance_telegram.app
-```
-
-When `DEV_MODE=true`, the bot auto-reloads on changes in `src/`, `scripts/`, and `.env`.
+This is the same webhook procedure used for production. Expose port `3000` with `ngrok` when you want Telegram to hit your local machine.
 
 ## Run With Docker Compose
 
@@ -81,7 +76,7 @@ The compose setup runs a Postgres container and persists bot state in the `postg
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-This enables `DEV_MODE=true` for the bot container and bind-mounts the project so code changes trigger auto-reload.
+This runs the same FastAPI webhook app with `uvicorn --reload` and bind-mounts the project so code changes trigger reload.
 
 ## Run Tests
 
@@ -96,6 +91,8 @@ poetry run env PYTHONPATH=src python -m pytest -q
 - `/status`
 - `/whoami`
 - `/set_sheet`
+- `/today`
+- `/week`
 - `beli kopi 25 ribu pakai bca`
 - `gaji masuk 8 juta`
 - `transfer 500 ribu dari BCA ke GoPay`
@@ -110,6 +107,84 @@ poetry run env PYTHONPATH=src python -m pytest -q
 5. Send the full Google Sheets link in chat
 6. The bot extracts the sheet ID, verifies `Transactions`, `Categories`, and `Summary`, repairs headers if needed, seeds default categories when the categories tab is empty, and starts using that sheet
 
+## Recap Commands
+
+- `/today` uses today by default, or accepts `/today YYYY-MM-DD`
+- `/week` uses the current week by default, or accepts `/week YYYY-MM-DD` or `/week YYYY-Www`
+- `/month` uses the current month by default, or accepts `/month YYYY-MM` or `/month MM-YYYY`
+- `/moth` is accepted as an alias for `/month`
+
+## Current Limitations
+
+- Transaction confirmation state is still in memory only; owner ID and active sheet selection are persisted.
+- The summary sheet is rebuilt from backend-generated rows rather than spreadsheet formulas.
+- Public-edit Google Sheets links alone are not enough for reliable API writes; in practice you should still share the sheet with the service account as `Editor`.
+
+## Webhook Deployment
+
+The bot now uses one procedure everywhere: Telegram webhook -> FastAPI app -> bot handlers.
+
+### Vercel
+
+Deploy the repo as an `Other` project. The Vercel entrypoint is the FastAPI app in:
+
+- `api/telegram_webhook.py`
+
+Required production env vars:
+
+- `TELEGRAM_BOT_TOKEN`
+- `GEMINI_API_KEY`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `DATABASE_URL`
+- `LOW_CONFIDENCE_THRESHOLD`
+- `DEFAULT_CURRENCY`
+- `DEFAULT_TIMEZONE`
+
+Important:
+
+- `DATABASE_URL` must point to a hosted Postgres database reachable from Vercel
+- the Docker Compose Postgres is only for local development
+
+### Local Webhook Testing
+
+Run the webhook app locally with FastAPI:
+
+```bash
+poetry run uvicorn api.telegram_webhook:app --reload --port 3000
+```
+
+Then expose it with `ngrok`:
+
+```bash
+ngrok http 3000
+```
+
+Your Telegram webhook URL should be:
+
+```text
+https://<your-ngrok-domain>/api/telegram_webhook
+```
+
+### Telegram Webhook Setup
+
+After the Vercel deployment is live, register the Telegram webhook:
+
+```bash
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<your-vercel-domain>/api/telegram_webhook"
+```
+
+To inspect the current webhook:
+
+```bash
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
+```
+
+If you need to replace an old webhook URL, remove it first:
+
+```bash
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook"
+```
+
 ## Transactions Tab Layout
 
 The bot writes the `Transactions` tab with this human-friendly column order:
@@ -122,17 +197,9 @@ The bot writes the `Transactions` tab with this human-friendly column order:
 - `Description`
 - `Category`
 - `Payment Method`
-- `Account / Wallet`
 - `Destination Account / Wallet`
 - `Merchant / Source`
 - `Input Mode`
 - `Raw Input`
 - `AI Confidence`
 - `Status`
-
-## Current Limitations
-
-- Telegram voice-note download and Gemini audio transcription wiring still needs deployment-specific setup.
-- Transaction confirmation state is still in memory only; owner ID and active sheet selection are persisted.
-- The summary sheet is rebuilt from backend-generated rows rather than spreadsheet formulas.
-- Public-edit Google Sheets links alone are not enough for reliable API writes; in practice you should still share the sheet with the service account as `Editor`.
