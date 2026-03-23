@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+
+from bot_finance_telegram.models import (
+    AccountBalanceSummary,
+    BudgetRecord,
+    CategorySummary,
+    ImprovementInsight,
+    IncomeSourceSummary,
+    MonthlyOverview,
+    MonthlySummary,
+    TransactionRecord,
+    TransactionStatus,
+    TransactionType,
+)
+
+
+class SummaryService:
+    def build_monthly_summary(
+        self,
+        month: str,
+        transactions: list[TransactionRecord],
+        budgets: list[BudgetRecord] | None = None,
+    ) -> MonthlySummary:
+        month_transactions = [
+            item
+            for item in transactions
+            if item.status != TransactionStatus.DELETED and item.transaction_date.strftime("%Y-%m") == month
+        ]
+        budgets = budgets or []
+
+        income = [
+            item for item in month_transactions if item.type in {TransactionType.INCOME, TransactionType.INVESTMENT_IN}
+        ]
+        expenses = [
+            item for item in month_transactions if item.type in {TransactionType.EXPENSE, TransactionType.INVESTMENT_OUT}
+        ]
+        transfers = [item for item in month_transactions if item.type == TransactionType.TRANSFER]
+
+        total_income = sum(item.amount for item in income)
+        total_expense = sum(item.amount for item in expenses)
+        total_transfer = sum(item.amount for item in transfers)
+        net_cash_flow = total_income - total_expense
+        savings_rate = round((net_cash_flow / total_income), 4) if total_income else 0.0
+
+        expense_totals = self._group_by_category(expenses)
+        income_totals = self._group_by_source(income)
+
+        overview = MonthlyOverview(
+            month=month,
+            total_income=total_income,
+            total_expense=total_expense,
+            total_transfer=total_transfer,
+            net_cash_flow=net_cash_flow,
+            savings_rate=savings_rate,
+            largest_expense_category=max(expense_totals, key=expense_totals.get, default=""),
+            largest_income_source=max(income_totals, key=income_totals.get, default=""),
+        )
+
+        budget_map = {item.category_name: item.budget_amount for item in budgets if item.month == month}
+        expense_categories = []
+        for category, total in sorted(expense_totals.items(), key=lambda pair: pair[1], reverse=True):
+            budget_amount = budget_map.get(category, 0)
+            difference = budget_amount - total
+            share = round(total / total_expense, 4) if total_expense else 0.0
+            expense_categories.append(
+                CategorySummary(
+                    month=month,
+                    category=category,
+                    total_amount=total,
+                    budget_amount=budget_amount,
+                    difference=difference,
+                    percent_of_total_expense=share,
+                )
+            )
+
+        income_sources = []
+        for source, total in sorted(income_totals.items(), key=lambda pair: pair[1], reverse=True):
+            income_sources.append(
+                IncomeSourceSummary(
+                    month=month,
+                    source=source,
+                    total_amount=total,
+                    percent_of_total_income=round(total / total_income, 4) if total_income else 0.0,
+                )
+            )
+
+        account_balances = self._build_account_balances(expenses, income, transfers)
+        insights = self._build_insights(month, overview, expense_categories, month_transactions)
+
+        return MonthlySummary(
+            overview=overview,
+            expense_categories=expense_categories,
+            income_sources=income_sources,
+            account_balances=account_balances,
+            insights=insights,
+        )
+
+    def format_monthly_summary_message(self, summary: MonthlySummary) -> str:
+        overview = summary.overview
+        lines = [
+            f"Summary for {overview.month}",
+            "",
+            f"Income: Rp{overview.total_income:,}".replace(",", "."),
+            f"Expenses: Rp{overview.total_expense:,}".replace(",", "."),
+            f"Transfers: Rp{overview.total_transfer:,}".replace(",", "."),
+            f"Net cash flow: Rp{overview.net_cash_flow:,}".replace(",", "."),
+            f"Savings rate: {overview.savings_rate * 100:.1f}%",
+            "",
+            "Top spending:",
+        ]
+        if summary.expense_categories:
+            for index, item in enumerate(summary.expense_categories[:3], start=1):
+                lines.append(f"{index}. {item.category} Rp{item.total_amount:,}".replace(",", "."))
+        else:
+            lines.append("No expense transactions in this month.")
+        if summary.insights:
+            lines.extend(["", "What to improve:"])
+            for item in summary.insights[:3]:
+                lines.append(f"- {item.insight_text}")
+        return "\n".join(lines)
+
+    def _group_by_category(self, transactions: list[TransactionRecord]) -> dict[str, int]:
+        totals: dict[str, int] = defaultdict(int)
+        for item in transactions:
+            totals[item.category or "Other"] += item.amount
+        return dict(totals)
+
+    def _group_by_source(self, transactions: list[TransactionRecord]) -> dict[str, int]:
+        totals: dict[str, int] = defaultdict(int)
+        for item in transactions:
+            key = item.merchant_or_source or item.category or "Other"
+            totals[key] += item.amount
+        return dict(totals)
+
+    def _build_account_balances(
+        self,
+        expenses: list[TransactionRecord],
+        income: list[TransactionRecord],
+        transfers: list[TransactionRecord],
+    ) -> list[AccountBalanceSummary]:
+        inflow: dict[str, int] = defaultdict(int)
+        outflow: dict[str, int] = defaultdict(int)
+        accounts: set[str] = set()
+
+        for item in expenses:
+            if item.account_from:
+                outflow[item.account_from] += item.amount
+                accounts.add(item.account_from)
+        for item in income:
+            if item.account_from:
+                inflow[item.account_from] += item.amount
+                accounts.add(item.account_from)
+        for item in transfers:
+            if item.account_from:
+                outflow[item.account_from] += item.amount
+                accounts.add(item.account_from)
+            if item.account_to:
+                inflow[item.account_to] += item.amount
+                accounts.add(item.account_to)
+
+        summaries = []
+        for account in sorted(accounts):
+            incoming = inflow.get(account, 0)
+            outgoing = outflow.get(account, 0)
+            summaries.append(
+                AccountBalanceSummary(
+                    account_name=account,
+                    opening_balance=0,
+                    inflow=incoming,
+                    outflow=outgoing,
+                    closing_balance=incoming - outgoing,
+                )
+            )
+        return summaries
+
+    def _build_insights(
+        self,
+        month: str,
+        overview: MonthlyOverview,
+        category_summaries: list[CategorySummary],
+        transactions: list[TransactionRecord],
+    ) -> list[ImprovementInsight]:
+        insights: list[ImprovementInsight] = []
+
+        for item in category_summaries:
+            if item.budget_amount and item.total_amount > item.budget_amount:
+                delta = item.total_amount - item.budget_amount
+                insights.append(
+                    ImprovementInsight(
+                        month=month,
+                        insight_type="overspending",
+                        insight_text=f"{item.category} spending is Rp{delta:,} above budget".replace(",", "."),
+                        priority="high",
+                    )
+                )
+
+        if category_summaries and category_summaries[0].percent_of_total_expense >= 0.4:
+            top = category_summaries[0]
+            insights.append(
+                ImprovementInsight(
+                    month=month,
+                    insight_type="concentration",
+                    insight_text=f"{top.category} makes up {top.percent_of_total_expense * 100:.0f}% of expenses",
+                    priority="medium",
+                )
+            )
+
+        if overview.total_income > 0 and overview.savings_rate < 0.1:
+            insights.append(
+                ImprovementInsight(
+                    month=month,
+                    insight_type="savings_rate",
+                    insight_text="Savings rate is below 10%; consider tightening optional spending.",
+                    priority="high",
+                )
+            )
+
+        transfer_total = sum(item.amount for item in transactions if item.type == TransactionType.TRANSFER)
+        if transfer_total > 0:
+            insights.append(
+                ImprovementInsight(
+                    month=month,
+                    insight_type="transfer_activity",
+                    insight_text=f"Transfer movement this month: Rp{transfer_total:,}".replace(",", "."),
+                    priority="low",
+                )
+            )
+
+        recurring_counter = Counter(
+            item.merchant_or_source
+            for item in transactions
+            if item.type == TransactionType.EXPENSE and item.merchant_or_source
+        )
+        recurring_names = [name for name, count in recurring_counter.items() if count >= 2]
+        if recurring_names:
+            insights.append(
+                ImprovementInsight(
+                    month=month,
+                    insight_type="subscription",
+                    insight_text=f"Recurring expenses detected: {', '.join(sorted(recurring_names)[:3])}",
+                    priority="medium",
+                )
+            )
+
+        if not insights:
+            insights.append(
+                ImprovementInsight(
+                    month=month,
+                    insight_type="positive",
+                    insight_text="Spending pattern looks stable this month.",
+                    priority="low",
+                )
+            )
+        return insights

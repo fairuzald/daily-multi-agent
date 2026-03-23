@@ -1,0 +1,6 @@
+services:
+  bot:
+    environment:
+      DEV_MODE: "true"
+    volumes:
+      - .:/app

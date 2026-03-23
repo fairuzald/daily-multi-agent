@@ -1,0 +1,27 @@
+[project]
+name = "bot-finance-telegram"
+version = "0.1.0"
+description = "Personal finance Telegram bot with Gemini parsing and Google Sheets storage"
+authors = [{ name = "fairuz" }]
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+dynamic = ["dependencies"]
+
+[tool.poetry]
+packages = [{ include = "bot_finance_telegram", from = "src" }]
+
+[tool.poetry.dependencies]
+google-genai = ">=1.10.0"
+gspread = ">=6.1.2"
+pydantic = ">=2.8.2"
+psycopg = {version = ">=3.2.9", extras = ["binary"]}
+python-dotenv = ">=1.0.1"
+python-telegram-bot = ">=21.10"
+watchfiles = ">=1.1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.3.5"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
