@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from bot_finance_telegram.models import (
+from bot_platform.bots.finance.models import (
     AccountBalanceSummary,
     BudgetRecord,
     CategorySummary,
@@ -124,6 +124,23 @@ class SummaryService:
             for item in summary.insights[:3]:
                 lines.append(f"- {item.insight_text}")
         return "\n".join(lines)
+
+    def compare_months(self, current_month: str, previous_month: str, transactions: list[TransactionRecord]) -> str:
+        current = self.build_monthly_summary(current_month, transactions, budgets=[])
+        previous = self.build_monthly_summary(previous_month, transactions, budgets=[])
+        income_delta = current.overview.total_income - previous.overview.total_income
+        expense_delta = current.overview.total_expense - previous.overview.total_expense
+        top_current = current.overview.largest_expense_category or "-"
+        top_previous = previous.overview.largest_expense_category or "-"
+        return "\n".join(
+            [
+                f"Month comparison: {current_month} vs {previous_month}",
+                f"Income delta: Rp{income_delta:,}".replace(",", "."),
+                f"Expense delta: Rp{expense_delta:,}".replace(",", "."),
+                f"Top expense category now: {top_current}",
+                f"Top expense category before: {top_previous}",
+            ]
+        )
 
     def _group_by_category(self, transactions: list[TransactionRecord]) -> dict[str, int]:
         totals: dict[str, int] = defaultdict(int)

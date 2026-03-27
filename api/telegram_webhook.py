@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,46 +14,20 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from bot_finance_telegram.app import (
-    _humanize_processing_error,
-    add_categories_command,
-    add_payment_method_command,
-    application_error_handler,
-    help_command,
-    month_command,
-    photo_message,
-    set_sheet_command,
-    start_command,
-    status_command,
-    today_command,
-    text_message,
-    voice_message,
-    week_command,
-    whoami_command,
+from bot_platform.shared.bootstrap.factory import create_telegram_application
+from bot_platform.shared.config.settings import Settings
+from bot_platform.shared.logging.setup import configure_logging
+from bot_platform.bots.finance.interfaces.telegram.controller import (
+    humanize_processing_error,
 )
-from bot_finance_telegram.config import Settings
-from bot_finance_telegram.runtime import create_telegram_application, process_webhook_update
+from bot_platform.shared.telegram.runtime import process_webhook_update
+
+configure_logging()
 
 
 async def _process_payload(payload: dict[str, Any]) -> None:
     settings = Settings.from_env()
-    application = create_telegram_application(
-        settings,
-        start_command=start_command,
-        help_command=help_command,
-        status_command=status_command,
-        whoami_command=whoami_command,
-        set_sheet_command=set_sheet_command,
-        add_payment_method_command=add_payment_method_command,
-        add_categories_command=add_categories_command,
-        today_command=today_command,
-        week_command=week_command,
-        month_command=month_command,
-        voice_message=voice_message,
-        photo_message=photo_message,
-        text_message=text_message,
-        application_error_handler=application_error_handler,
-    )
+    application = create_telegram_application(settings)
     await process_webhook_update(application, payload)
 
 
@@ -75,7 +50,7 @@ async def telegram_webhook(request: Request) -> str:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        humanized = _humanize_processing_error(exc, source="webhook request")
+        humanized = humanize_processing_error(exc, source="webhook request")
         raise HTTPException(status_code=500, detail=str(humanized)) from exc
 
     return "OK"

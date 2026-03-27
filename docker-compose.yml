@@ -1,14 +1,14 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: bot-finance-telegram-postgres
+    container_name: bot-platform-finance-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: bot_finance_telegram
-      POSTGRES_USER: bot_finance_telegram
-      POSTGRES_PASSWORD: bot_finance_telegram
+      POSTGRES_DB: bot_platform_finance
+      POSTGRES_USER: bot_platform_finance
+      POSTGRES_PASSWORD: bot_platform_finance
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bot_finance_telegram -d bot_finance_telegram"]
+      test: ["CMD-SHELL", "pg_isready -U bot_platform_finance -d bot_platform_finance"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -17,12 +17,12 @@ services:
 
   bot:
     build: .
-    container_name: bot-finance-telegram
+    container_name: bot-platform-finance
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://bot_finance_telegram:bot_finance_telegram@postgres:5432/bot_finance_telegram
+      DATABASE_URL: postgresql://bot_platform_finance:bot_platform_finance@postgres:5432/bot_platform_finance
     ports:
       - "3000:3000"
     depends_on:

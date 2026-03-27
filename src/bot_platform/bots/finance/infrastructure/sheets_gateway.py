@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 
-from bot_finance_telegram.models import MonthlySummary, TransactionRecord
+from bot_platform.bots.finance.models import MonthlySummary, TransactionRecord
 
 
 SHEET_SCHEMAS: dict[str, list[str]] = {
@@ -168,9 +168,7 @@ class GoogleSheetsClient:
             return
 
         metadata = spreadsheet.fetch_sheet_metadata()
-        sheet_meta = next(
-            sheet for sheet in metadata["sheets"] if sheet["properties"]["title"] == "Transactions"
-        )
+        sheet_meta = next(sheet for sheet in metadata["sheets"] if sheet["properties"]["title"] == "Transactions")
         sheet_id = sheet_meta["properties"]["sheetId"]
         requests = [
             {
@@ -236,15 +234,7 @@ def build_category_rows(category_map: dict[str, dict[str, list[str]]]) -> list[l
     for tx_type, groups in category_map.items():
         for category, subcategories in groups.items():
             for subcategory in subcategories:
-                rows.append(
-                    [
-                        tx_type,
-                        category,
-                        subcategory,
-                        "",
-                        "yes",
-                    ]
-                )
+                rows.append([tx_type, category, subcategory, "", "yes"])
     return rows
 
 

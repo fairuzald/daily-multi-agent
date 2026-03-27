@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 
 def load_local_env() -> None:
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[4]
     load_dotenv(project_root / ".env", override=False)
 
 
@@ -45,11 +45,14 @@ class Settings:
             missing.append("GEMINI_API_KEY")
         if not self.database_url:
             missing.append("DATABASE_URL")
-        missing.extend(self.validate_google_required())
+        if not self.google_service_account_json:
+            missing.append("GOOGLE_SERVICE_ACCOUNT_JSON")
         return missing
 
     def validate_google_required(self) -> list[str]:
         missing: list[str] = []
+        if not self.google_sheet_id:
+            missing.append("GOOGLE_SHEET_ID")
         if not self.google_service_account_json:
             missing.append("GOOGLE_SERVICE_ACCOUNT_JSON")
         return missing

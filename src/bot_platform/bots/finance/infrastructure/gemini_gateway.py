@@ -9,7 +9,7 @@ from typing import Any
 from google.genai import types
 from pydantic import ValidationError
 
-from bot_finance_telegram.models import ParsedTransaction, TransactionRecord
+from bot_platform.bots.finance.models import ParsedTransaction, TransactionRecord
 
 
 class SourceKind(str, Enum):
@@ -82,11 +82,7 @@ class GeminiClient:
             raise ValueError(f"Gemini returned invalid image transaction payload: {exc}") from exc
         return parsed
 
-    def correct_transaction(
-        self,
-        original: TransactionRecord,
-        correction_input: str,
-    ) -> ParsedTransaction:
+    def correct_transaction(self, original: TransactionRecord, correction_input: str) -> ParsedTransaction:
         if not correction_input.strip():
             raise ValueError("correction input cannot be empty")
         payload = self._call_correction_model(original=original, correction_input=correction_input)
@@ -100,9 +96,7 @@ class GeminiClient:
         try:
             from google import genai  # type: ignore
         except ImportError as exc:
-            raise RuntimeError(
-                "google-genai is not installed. Run `poetry install` first."
-            ) from exc
+            raise RuntimeError("google-genai is not installed. Run `poetry install` first.") from exc
 
         client = genai.Client(api_key=self.api_key)
         response = client.models.generate_content(
@@ -123,9 +117,7 @@ class GeminiClient:
         try:
             from google import genai  # type: ignore
         except ImportError as exc:
-            raise RuntimeError(
-                "google-genai is not installed. Run `poetry install` first."
-            ) from exc
+            raise RuntimeError("google-genai is not installed. Run `poetry install` first.") from exc
 
         client = genai.Client(api_key=self.api_key)
         response = client.models.generate_content(
@@ -160,9 +152,7 @@ class GeminiClient:
         try:
             from google import genai  # type: ignore
         except ImportError as exc:
-            raise RuntimeError(
-                "google-genai is not installed. Run `poetry install` first."
-            ) from exc
+            raise RuntimeError("google-genai is not installed. Run `poetry install` first.") from exc
 
         original_payload = {
             "transaction_date": original.transaction_date.isoformat(),
@@ -240,13 +230,17 @@ class GeminiClient:
             normalized["transaction_date"] = date.today().isoformat()
         elif isinstance(transaction_date, str):
             stripped_date = transaction_date.strip()
-            if stripped_date:
+            if GeminiClient._looks_like_placeholder_date(stripped_date):
+                normalized["transaction_date"] = date.today().isoformat()
+                normalized["needs_confirmation"] = True
+            elif stripped_date:
                 try:
                     normalized["transaction_date"] = datetime.fromisoformat(
                         stripped_date.replace("Z", "+00:00")
                     ).date().isoformat()
                 except ValueError:
-                    pass
+                    normalized["transaction_date"] = date.today().isoformat()
+                    normalized["needs_confirmation"] = True
 
         if normalized.get("tags") is None:
             normalized["tags"] = []
@@ -286,23 +280,14 @@ class GeminiClient:
             normalized["needs_confirmation"] = bool(normalized.get("missing_fields")) or bool(
                 normalized.get("needs_confirmation")
             )
-
         return normalized
 
     @staticmethod
-    def _normalize_amount(value: Any) -> int | None:
-        if value in (None, ""):
-            return None
-        if isinstance(value, str):
-            digits = "".join(char for char in value if char.isdigit())
-            if not digits:
-                return None
-            value = int(digits)
-        if isinstance(value, float):
-            value = int(value)
-        if not isinstance(value, int):
-            return None
-        return value if value > 0 else None
+    def _looks_like_placeholder_date(value: str) -> bool:
+        lowered = value.strip().lower()
+        if lowered in {"yyyy-mm-dd", "dd-mm-yyyy", "dd/mm/yyyy", "mm-dd-yyyy", "mm/dd/yyyy"}:
+            return True
+        return any(token in lowered for token in ("yyyy", "mm", "dd")) and any(char in lowered for char in ("-", "/"))
 
     @staticmethod
     def _filter_required_missing_fields(payload: dict[str, Any]) -> list[str]:
@@ -320,6 +305,21 @@ class GeminiClient:
             for field_name in payload.get("missing_fields", [])
             if field_name in required and field_name != "transaction_date"
         ]
+
+    @staticmethod
+    def _normalize_amount(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, str):
+            digits = "".join(char for char in value if char.isdigit())
+            if not digits:
+                return None
+            value = int(digits)
+        if isinstance(value, float):
+            value = int(value)
+        if not isinstance(value, int):
+            return None
+        return value if value > 0 else None
 
     @staticmethod
     def _normalize_payment_method(value: Any, *, raw_context: str = "") -> str:
