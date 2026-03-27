@@ -114,6 +114,14 @@ poetry run env PYTHONPATH=src python -m pytest -q
 - `gaji masuk 8 juta`
 - `transfer 500 ribu dari BCA ke GoPay`
 - `/month`
+- `/delete_last`
+- `/delete_reply`
+- `/edit_last 30000 GoPay`
+- `/edit_reply 30000 GoPay`
+- `/read Food week`
+- `/budget_set monthly category 500000 Food`
+- `/budget_show monthly`
+- `/compare_month`
 - `delete last`
 - `edit last 30000 pakai gopay`
 - `show food this week`
@@ -136,6 +144,17 @@ poetry run env PYTHONPATH=src python -m pytest -q
 - `/week` uses the current week by default, or accepts `/week YYYY-MM-DD` or `/week YYYY-Www`
 - `/month` uses the current month by default, or accepts `/month YYYY-MM` or `/month MM-YYYY`
 - `/moth` is accepted as an alias for `/month`
+
+## Strict Action Commands
+
+- `/delete_last`
+- `/delete_reply`
+- `/edit_last <amount> [payment_method]`
+- `/edit_reply <amount> [payment_method]`
+- `/read <category> <today|week|month>`
+- `/budget_set <weekly|monthly> <global|category> <amount> [category]`
+- `/budget_show <weekly|monthly>`
+- `/compare_month`
 
 ## Current Limitations
 
