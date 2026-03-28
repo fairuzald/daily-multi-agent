@@ -34,11 +34,17 @@ class LifeTelegramController:
         if reply_context is not None:
             self.bot_service.state_store.set_reply_context(update.effective_chat.id, sent.message_id, reply_context)
 
+    def _log_processing_failure(self, exc: Exception, *, source: str) -> None:
+        if isinstance(exc, PermissionError):
+            logger.warning("Life bot %s rejected: %s", source, exc)
+            return
+        logger.exception("Failed to process life bot %s", source)
+
     async def _run_and_reply(self, update: Update, *, source: str, callback) -> None:
         try:
             response = callback()
         except Exception as exc:
-            logger.exception("Failed to process life bot %s", source)
+            self._log_processing_failure(exc, source=source)
             response = LifeBotResponse(humanize_processing_error_text(exc, source=source))
         await self._reply(update, response)
 
@@ -206,7 +212,7 @@ class LifeTelegramController:
                 reply_context=reply_context,
             )
         except Exception as exc:
-            logger.exception("Failed to process life bot text message")
+            self._log_processing_failure(exc, source="text message")
             response = LifeBotResponse(humanize_processing_error_text(exc, source="message"))
         await self._reply(update, response)
 
@@ -229,7 +235,7 @@ class LifeTelegramController:
                 reply_context=reply_context,
             )
         except Exception as exc:
-            logger.exception("Failed to process life bot voice message")
+            self._log_processing_failure(exc, source="voice message")
             response = LifeBotResponse(humanize_processing_error_text(exc, source="voice note"))
         await self._reply(update, response)
 
