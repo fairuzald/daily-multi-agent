@@ -8,6 +8,9 @@ import httpx
 def humanize_processing_error_text(exc: Exception, *, source: str) -> str:
     error_text = str(exc)
 
+    if isinstance(exc, PermissionError):
+        return error_text
+
     if (
         "RESOURCE_EXHAUSTED" in error_text
         or "quota exceeded" in error_text.lower()

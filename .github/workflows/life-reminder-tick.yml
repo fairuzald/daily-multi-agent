@@ -1,4 +1,4 @@
-name: Life Reminder Tick
+name: Life Reminder Tick Cron
 
 # Required GitHub Actions secrets:
 # LIFE_TICK_URL=https://your-domain.example.com/api/life_reminder_tick
@@ -6,7 +6,7 @@ name: Life Reminder Tick
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:

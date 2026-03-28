@@ -34,46 +34,102 @@ class LifeTelegramController:
         if reply_context is not None:
             self.bot_service.state_store.set_reply_context(update.effective_chat.id, sent.message_id, reply_context)
 
+    async def _run_and_reply(self, update: Update, *, source: str, callback) -> None:
+        try:
+            response = callback()
+        except Exception as exc:
+            logger.exception("Failed to process life bot %s", source)
+            response = LifeBotResponse(humanize_processing_error_text(exc, source=source))
+        await self._reply(update, response)
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_start(update.effective_user.id, update.effective_chat.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_start(update.effective_user.id, update.effective_chat.id),
+        )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_help(update.effective_user.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_help(update.effective_user.id),
+        )
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_status(update.effective_user.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_status(update.effective_user.id),
+        )
 
     async def today_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_today(update.effective_user.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_today(update.effective_user.id),
+        )
 
     async def tomorrow_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_upcoming(update.effective_user.id, days=1))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_upcoming(update.effective_user.id, days=1),
+        )
 
     async def upcoming_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         days = int(context.args[0]) if context.args and context.args[0].isdigit() else 7
-        await self._reply(update, self.bot_service.handle_upcoming(update.effective_user.id, days=days))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_upcoming(update.effective_user.id, days=days),
+        )
 
     async def overdue_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_overdue(update.effective_user.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_overdue(update.effective_user.id),
+        )
 
     async def followups_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_followups(update.effective_user.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_followups(update.effective_user.id),
+        )
 
     async def dates_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self._reply(update, self.bot_service.handle_important_dates(update.effective_user.id))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_important_dates(update.effective_user.id),
+        )
 
     async def done_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_context = self._reply_context(update)
         if reply_context is not None:
-            await self._reply(update, self.bot_service.handle_done(update.effective_user.id, reply_context.item_id))
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_done(update.effective_user.id, reply_context.item_id),
+            )
             return
         if len(context.args) == 0:
-            await self._reply(update, self.bot_service.handle_done_latest(update.effective_user.id))
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_done_latest(update.effective_user.id),
+            )
             return
         if len(context.args) != 1:
             await self._reply(update, "Use /done to mark the latest active item, or reply to a saved item and send /done.")
             return
-        await self._reply(update, self.bot_service.handle_done(update.effective_user.id, context.args[0]))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_done(update.effective_user.id, context.args[0]),
+        )
 
     async def snooze_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_context = self._reply_context(update)
@@ -83,9 +139,17 @@ class LifeTelegramController:
                 unit = "days" if "day" in context.args[0].lower() else "hours"
                 if amount_text:
                     if reply_context is not None:
-                        await self._reply(update, self.bot_service.handle_snooze(update.effective_user.id, reply_context.item_id, int(amount_text), unit))
+                        await self._run_and_reply(
+                            update,
+                            source="command",
+                            callback=lambda: self.bot_service.handle_snooze(update.effective_user.id, reply_context.item_id, int(amount_text), unit),
+                        )
                         return
-                    await self._reply(update, self.bot_service.handle_snooze_latest(update.effective_user.id, int(amount_text), unit))
+                    await self._run_and_reply(
+                        update,
+                        source="command",
+                        callback=lambda: self.bot_service.handle_snooze_latest(update.effective_user.id, int(amount_text), unit),
+                    )
                     return
             await self._reply(update, "Use /snooze 2hours for the latest active item, or reply to a saved item with /snooze 2hours.")
             return
@@ -95,20 +159,36 @@ class LifeTelegramController:
             await self._reply(update, "Use /snooze 2hours for the latest active item, or reply to a saved item with /snooze 2hours.")
             return
         target = reply_context.item_id if reply_context is not None else context.args[0]
-        await self._reply(update, self.bot_service.handle_snooze(update.effective_user.id, target, int(amount_text), unit))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_snooze(update.effective_user.id, target, int(amount_text), unit),
+        )
 
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_context = self._reply_context(update)
         if reply_context is not None:
-            await self._reply(update, self.bot_service.handle_cancel(update.effective_user.id, reply_context.item_id))
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_cancel(update.effective_user.id, reply_context.item_id),
+            )
             return
         if len(context.args) == 0:
-            await self._reply(update, self.bot_service.handle_cancel_latest(update.effective_user.id))
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_cancel_latest(update.effective_user.id),
+            )
             return
         if len(context.args) != 1:
             await self._reply(update, "Use /cancel for the latest active item, or reply to a saved item and send /cancel.")
             return
-        await self._reply(update, self.bot_service.handle_cancel(update.effective_user.id, context.args[0]))
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_cancel(update.effective_user.id, context.args[0]),
+        )
 
     async def delete_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self.cancel_command(update, context)
