@@ -197,6 +197,7 @@ class GoogleSheetsClient:
         rows: list[list[str]],
         existing_merges: list[dict[str, int]],
     ) -> list[dict[str, object]]:
+        normalized_rows = cls._hydrate_rows_from_existing_merges(rows=rows, existing_merges=existing_merges)
         requests: list[dict[str, object]] = [
             {
                 "unmergeCells": {
@@ -209,13 +210,13 @@ class GoogleSheetsClient:
         if len(rows) <= 2:
             return requests
 
-        group_values = [row[14] if len(row) > 14 else "" for row in rows]
+        group_values = [row[14] if len(row) > 14 else "" for row in normalized_rows]
         merge_requests: list[dict[str, object]] = []
         for column_index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15):
             merge_requests.extend(
                 cls._build_group_merge_requests(
                     sheet_id=sheet_id,
-                    rows=rows,
+                    rows=normalized_rows,
                     group_values=group_values,
                     column_index=column_index,
                 )
@@ -245,41 +246,40 @@ class GoogleSheetsClient:
             )
         return requests
 
-    @staticmethod
-    def _build_merge_requests(
+    @classmethod
+    def _hydrate_rows_from_existing_merges(
+        cls,
         *,
-        sheet_id: int,
-        values: list[str],
-        start_column_index: int,
-        end_column_index: int,
-    ) -> list[dict[str, object]]:
-        if len(values) <= 2:
-            return []
+        rows: list[list[str]],
+        existing_merges: list[dict[str, int]],
+    ) -> list[list[str]]:
+        normalized_rows = [list(row) for row in rows]
+        for merge_range in existing_merges:
+            start_row = int(merge_range.get("startRowIndex", 0))
+            end_row = int(merge_range.get("endRowIndex", 0))
+            start_column = int(merge_range.get("startColumnIndex", 0))
+            end_column = int(merge_range.get("endColumnIndex", 0))
+            if start_row < 1 or end_row <= start_row or end_column <= start_column:
+                continue
+            if start_row >= len(normalized_rows):
+                continue
+            source_row = normalized_rows[start_row]
+            cls._ensure_row_length(source_row, end_column)
+            for column_index in range(start_column, end_column):
+                source_value = source_row[column_index]
+                if not source_value:
+                    continue
+                for row_index in range(start_row + 1, min(end_row, len(normalized_rows))):
+                    target_row = normalized_rows[row_index]
+                    cls._ensure_row_length(target_row, end_column)
+                    if not target_row[column_index]:
+                        target_row[column_index] = source_value
+        return normalized_rows
 
-        requests: list[dict[str, object]] = []
-        start = 1
-        current = values[1]
-        for index in range(2, len(values) + 1):
-            next_value = values[index] if index < len(values) else None
-            if next_value != current:
-                if current and index - start > 1:
-                    requests.append(
-                        {
-                            "mergeCells": {
-                                "range": {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": start,
-                                    "endRowIndex": index,
-                                    "startColumnIndex": start_column_index,
-                                    "endColumnIndex": end_column_index,
-                                },
-                                "mergeType": "MERGE_ALL",
-                            }
-                        }
-                    )
-                start = index
-                current = next_value
-        return requests
+    @staticmethod
+    def _ensure_row_length(row: list[str], length: int) -> None:
+        if len(row) < length:
+            row.extend([""] * (length - len(row)))
 
     @staticmethod
     def _build_group_merge_requests(
@@ -360,77 +360,6 @@ class GoogleSheetsClient:
                 }
             )
         return requests
-
-    @staticmethod
-    def _reconcile_merge_requests(
-        requests: list[dict[str, object]],
-        *,
-        existing_merges: list[dict[str, int]],
-    ) -> tuple[list[dict[str, object]], list[dict[str, int]]]:
-        output_requests: list[dict[str, object]] = []
-        aligned_ranges: list[dict[str, int]] = []
-        seen_ranges = [dict(item) for item in existing_merges]
-        for request in requests:
-            merge_request = request.get("mergeCells", {})
-            merge_range = merge_request.get("range", {})
-            if not merge_range:
-                continue
-            exact_match = next((existing for existing in seen_ranges if GoogleSheetsClient._ranges_equal(merge_range, existing)), None)
-            if exact_match is not None:
-                continue
-            extendable_match = next(
-                (
-                    existing
-                    for existing in seen_ranges
-                    if GoogleSheetsClient._can_replace_merge(existing, merge_range)
-                ),
-                None,
-            )
-            if extendable_match is not None:
-                output_requests.append({"unmergeCells": {"range": dict(extendable_match)}})
-                output_requests.append(request)
-                aligned_ranges.append(dict(merge_range))
-                seen_ranges.remove(extendable_match)
-                seen_ranges.append(dict(merge_range))
-                continue
-            if any(GoogleSheetsClient._ranges_overlap(merge_range, existing) for existing in seen_ranges):
-                continue
-            output_requests.append(request)
-            aligned_ranges.append(dict(merge_range))
-            seen_ranges.append(dict(merge_range))
-        return output_requests, aligned_ranges
-
-    @staticmethod
-    def _ranges_overlap(left: dict[str, int], right: dict[str, int]) -> bool:
-        if left.get("sheetId") != right.get("sheetId"):
-            return False
-        row_overlap = left["startRowIndex"] < right["endRowIndex"] and right["startRowIndex"] < left["endRowIndex"]
-        column_overlap = left["startColumnIndex"] < right["endColumnIndex"] and right["startColumnIndex"] < left["endColumnIndex"]
-        return row_overlap and column_overlap
-
-    @staticmethod
-    def _ranges_equal(left: dict[str, int], right: dict[str, int]) -> bool:
-        return (
-            left.get("sheetId") == right.get("sheetId")
-            and left.get("startRowIndex") == right.get("startRowIndex")
-            and left.get("endRowIndex") == right.get("endRowIndex")
-            and left.get("startColumnIndex") == right.get("startColumnIndex")
-            and left.get("endColumnIndex") == right.get("endColumnIndex")
-        )
-
-    @staticmethod
-    def _can_replace_merge(existing: dict[str, int], candidate: dict[str, int]) -> bool:
-        if existing.get("sheetId") != candidate.get("sheetId"):
-            return False
-        if existing.get("startColumnIndex") != candidate.get("startColumnIndex"):
-            return False
-        if existing.get("endColumnIndex") != candidate.get("endColumnIndex"):
-            return False
-        return (
-            candidate["startRowIndex"] <= existing["startRowIndex"]
-            and candidate["endRowIndex"] >= existing["endRowIndex"]
-            and not GoogleSheetsClient._ranges_equal(existing, candidate)
-        )
 
     def _credentials_config(self) -> dict[str, str]:
         if not self.service_account_json.strip():

@@ -83,6 +83,18 @@ class LifeBotService:
             f"Calendar sync: {'on' if self.calendar_gateway.enabled() else 'off'}"
         )
 
+    def handle_whoami(self, user_id: int, chat_id: int) -> LifeBotResponse:
+        owner_user_id = self.state_store.get_owner_user_id()
+        owner_chat_id = self.state_store.get_owner_chat_id()
+        is_owner = owner_user_id == user_id
+        return LifeBotResponse(
+            f"Your Telegram user ID: {user_id}\n"
+            f"Your Telegram chat ID: {chat_id}\n"
+            f"Stored owner user ID: {owner_user_id or '-'}\n"
+            f"Stored owner chat ID: {owner_chat_id or '-'}\n"
+            f"Owner match: {'yes' if is_owner else 'no'}"
+        )
+
     def handle_text_message(
         self,
         user_id: int,
@@ -381,13 +393,13 @@ class LifeBotService:
             self.state_store.set_owner_chat_id(chat_id)
             return
         if owner != user_id:
-            raise PermissionError("This bot is locked to a different Telegram user.")
+            raise PermissionError("This bot is locked to a different Telegram user. Send /whoami to compare your current Telegram user ID with the stored owner.")
         self.state_store.set_owner_chat_id(chat_id)
 
     def _ensure_owner(self, user_id: int) -> None:
         owner = self.state_store.get_owner_user_id()
         if owner != user_id:
-            raise PermissionError("This bot is locked to a different Telegram user.")
+            raise PermissionError("This bot is locked to a different Telegram user. Send /whoami to compare your current Telegram user ID with the stored owner.")
 
     def _find_item(self, item_id_fragment: str) -> LifeItem:
         normalized = item_id_fragment.strip().lower()

@@ -69,6 +69,13 @@ class LifeTelegramController:
             callback=lambda: self.bot_service.handle_status(update.effective_user.id),
         )
 
+    async def whoami_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_whoami(update.effective_user.id, update.effective_chat.id),
+        )
+
     async def today_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self._run_and_reply(
             update,
