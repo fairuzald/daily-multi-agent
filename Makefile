@@ -9,8 +9,17 @@ DEV_ENV := .env.dev
 PROD_ENV := .env
 DEV_COMPOSE := -f docker-compose.yml -f docker-compose.dev.yml
 PROD_COMPOSE := -f docker-compose.yml
+BOT ?= 1
 
 .PHONY: install test local-dev local-prod docker-dev docker-prod docker-down docker-logs docker-logs-dev ngrok-dev webhook-set-dev webhook-info-dev webhook-delete-dev webhook-set-prod webhook-info-prod webhook-delete-prod
+
+define webhook_token
+$(if $(filter 2,$(BOT)),$$LIFE_TELEGRAM_BOT_TOKEN,$$TELEGRAM_BOT_TOKEN)
+endef
+
+define webhook_path
+$(if $(filter 2,$(BOT)),/api/life_telegram_webhook,/api/telegram_webhook)
+endef
 
 install:
 	$(POETRY) install
@@ -44,19 +53,19 @@ ngrok-dev:
 	ngrok http $(APP_PORT)
 
 webhook-set-dev:
-	set -a; . ./$(DEV_ENV); set +a; test -n "$$WEBHOOK_URL"; curl "https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/setWebhook?url=$$WEBHOOK_URL/api/telegram_webhook"
+	set -a; . ./$(DEV_ENV); set +a; test -n "$$WEBHOOK_URL"; test -n "$(call webhook_token)"; curl "https://api.telegram.org/bot$(call webhook_token)/setWebhook?url=$$WEBHOOK_URL$(call webhook_path)"
 
 webhook-info-dev:
-	set -a; . ./$(DEV_ENV); set +a; curl "https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+	set -a; . ./$(DEV_ENV); set +a; test -n "$(call webhook_token)"; curl "https://api.telegram.org/bot$(call webhook_token)/getWebhookInfo"
 
 webhook-delete-dev:
-	set -a; . ./$(DEV_ENV); set +a; curl "https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/deleteWebhook"
+	set -a; . ./$(DEV_ENV); set +a; test -n "$(call webhook_token)"; curl "https://api.telegram.org/bot$(call webhook_token)/deleteWebhook"
 
 webhook-set-prod:
-	set -a; . ./$(PROD_ENV); set +a; test -n "$$WEBHOOK_URL"; curl "https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/setWebhook?url=$$WEBHOOK_URL/api/telegram_webhook"
+	set -a; . ./$(PROD_ENV); set +a; test -n "$$WEBHOOK_URL"; test -n "$(call webhook_token)"; curl "https://api.telegram.org/bot$(call webhook_token)/setWebhook?url=$$WEBHOOK_URL$(call webhook_path)"
 
 webhook-info-prod:
-	set -a; . ./$(PROD_ENV); set +a; curl "https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/getWebhookInfo"
+	set -a; . ./$(PROD_ENV); set +a; test -n "$(call webhook_token)"; curl "https://api.telegram.org/bot$(call webhook_token)/getWebhookInfo"
 
 webhook-delete-prod:
-	set -a; . ./$(PROD_ENV); set +a; curl "https://api.telegram.org/bot$$TELEGRAM_BOT_TOKEN/deleteWebhook"
+	set -a; . ./$(PROD_ENV); set +a; test -n "$(call webhook_token)"; curl "https://api.telegram.org/bot$(call webhook_token)/deleteWebhook"

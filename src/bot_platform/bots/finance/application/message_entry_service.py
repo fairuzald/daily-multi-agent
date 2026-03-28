@@ -34,13 +34,7 @@ class MessageEntryService:
         self.runtime = guards.runtime
 
     def _require_owner_with_sheet(self, user_id: int) -> BotResponse | None:
-        auth = self.guards.ensure_owner(user_id)
-        if auth:
-            return auth
-        return self.guards.ensure_active_sheet()
-
-    def _require_authorized_with_sheet(self, user_id: int) -> BotResponse | None:
-        return self.guards.ensure_authorized_with_sheet(user_id)
+        return self.guards.ensure_owner_with_sheet(user_id)
 
     def handle_text_message(
         self,
@@ -92,7 +86,7 @@ class MessageEntryService:
         reply_context: ReplyContextInput | None = None,
         message_datetime: datetime | None = None,
     ) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
 
@@ -123,7 +117,7 @@ class MessageEntryService:
         reply_context: ReplyContextInput | None = None,
         message_datetime: datetime | None = None,
     ) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
 

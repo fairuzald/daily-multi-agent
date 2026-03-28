@@ -1,70 +1,48 @@
 # Deployment
 
-This guide covers production-oriented deployment for the finance bot.
+This repo can be deployed as one FastAPI webhook app serving both bots.
 
 ## Runtime Shape
 
-The production runtime is:
+- FastAPI webhook app
+- Telegram webhook endpoints
+- external Postgres
+- AI provider credentials
+- optional Google Sheets and Google Calendar integrations
 
-- Telegram webhook
-- FastAPI app
-- finance bot service
-- external Postgres database
-- Google Sheets API
-- Gemini and/or OpenRouter
+## Endpoints
 
-The bot should not depend on a Docker-managed local Postgres service in production.
+- `/api/telegram_webhook` for finance
+- `/api/life_telegram_webhook` for life
+- `/api/life_reminder_tick` for life Telegram reminders
 
-## Supported Runtime Shapes
+## Environment
 
-### Docker Production
+Production-like runtime uses `.env`.
 
-- `make docker-prod`
-- uses `.env`
-- runs only the bot container
-- expects external Postgres through `DATABASE_URL`
+Common values:
 
-### Vercel
-
-- uses `api/telegram_webhook.py`
-- expects production env vars configured in the platform
-- still depends on external Postgres and Google Sheets APIs
-
-## Production Environment File
-
-Use `.env` for production-like deployments.
-
-Key variables:
-
-- `TELEGRAM_BOT_TOKEN`
 - `DATABASE_URL`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
 - `PRIMARY_AI_PROVIDER`
 - `GEMINI_API_KEY` and/or `OPENROUTER_API_KEY`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+- `RATE_LIMIT_WINDOW_SECONDS`
+- `RATE_LIMIT_WEBHOOK_MAX_REQUESTS_PER_IP`
+- `RATE_LIMIT_REMINDER_MAX_REQUESTS_PER_IP`
 
-Before production deployment, complete the Google Cloud service account and Google Sheets setup described in [setup.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup.md#google-cloud-and-google-sheets-setup).
+Finance:
 
-## Database
+- `TELEGRAM_BOT_TOKEN`
 
-`DATABASE_URL` must point to a hosted or otherwise externally reachable Postgres instance.
+Life:
 
-The bot stores:
-
-- owner Telegram ID
-- active sheet selection
-- reply context
-- pending confirmation state
-- learned mappings
-- budgets
+- `LIFE_TELEGRAM_BOT_TOKEN`
+- `LIFE_GOOGLE_CALENDAR_ID`
+- `LIFE_REMINDER_TICK_TOKEN`
 
 ## Docker
 
-Production Docker should run only the bot app container and use the external database configured in `.env`.
-
-It should not:
-
-- start a local Postgres dependency
-- override `DATABASE_URL` to point at a Compose-managed database
+Production Docker runs only the bot app container and expects external Postgres.
 
 Useful targets:
 
@@ -72,74 +50,68 @@ Useful targets:
 make docker-prod
 make docker-logs
 make docker-down
-make webhook-set-prod
-make webhook-info-prod
-make webhook-delete-prod
 ```
-
-Operational expectation:
-
-- `docker-compose.yml` no longer provisions Postgres
-- `DATABASE_URL` is never overridden to a Compose-local database
-- the same production env file drives both Docker and other hosted runtimes
-- only `docker-compose.dev.yml` provisions a local Postgres service, and only for development
-- dev-only service config lives under `docker/postgres` and `docker/dozzle`
 
 ## Vercel
 
-If deployed to Vercel, the entrypoint is:
+If deployed to Vercel:
 
-- `api/telegram_webhook.py`
+- use `api/telegram_webhook.py`
+- provide all production env vars
+- keep Postgres external
+- register both Telegram webhooks separately
 
-Requirements:
+## Webhook Registration
 
-- production environment variables configured in Vercel
-- external Postgres database reachable from Vercel
-- valid Telegram webhook URL
-
-## Telegram Webhook Setup
-
-If `WEBHOOK_URL` is set in `.env`, you can register the production webhook with:
+Finance:
 
 ```bash
 make webhook-set-prod
 ```
 
-Useful production webhook helpers:
-
-- `make webhook-info-prod`
-- `make webhook-delete-prod`
-
-Set the webhook:
+Life:
 
 ```bash
-curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<your-domain>/api/telegram_webhook"
+make BOT=2 webhook-set-prod
 ```
 
-Inspect the webhook:
+## Life Reminder Scheduler
 
-```bash
-curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
-```
+The life bot needs a scheduler for Telegram reminders. This repo ships a GitHub Actions workflow that hits the reminder tick every 5 minutes.
 
-Delete the webhook:
+Workflow:
 
-```bash
-curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook"
-```
+- `.github/workflows/life-reminder-tick.yml`
 
-## Operational Notes
+Secrets:
 
-- if Gemini is primary and exhausted, the bot can fall back to OpenRouter
-- if OpenRouter is configured with model pools, it will try the next model when the current one fails with retryable provider/model errors
-- Google Sheet header repair is intended to be non-destructive
-- `.env.dev` is for development only; production-like runtimes should use `.env`
+- `LIFE_TICK_URL_DEV`
+- `LIFE_REMINDER_TICK_TOKEN_DEV`
+- `LIFE_TICK_URL_MAIN`
+- `LIFE_REMINDER_TICK_TOKEN_MAIN`
 
-## Recommended Checks After Deployment
+If you do not run that scheduler:
 
-- `/start` works for the owner
-- sheet connection succeeds
-- a test expense saves correctly
-- a voice note can be transcribed
-- a screenshot can be parsed
-- `/today`, `/month`, and `/compare_month` work
+- life items still save
+- Google Calendar sync still works
+- Telegram reminders will not be pushed automatically
+
+## HTTP Rate Limiting
+
+The FastAPI entrypoints now apply per-IP fixed-window rate limits:
+
+- finance webhook
+- life webhook
+- life reminder tick
+
+The defaults are intended to be conservative protection, not hard anti-bot security:
+
+- webhook endpoints: `120` requests per IP per `60` seconds
+- reminder tick: `12` requests per IP per `60` seconds
+
+Tune them with env if your deployment shape needs different limits.
+
+## Bot-Specific Deployment Notes
+
+- Finance setup details: [src/bot_platform/bots/finance/SETUP.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/finance/SETUP.md)
+- Life setup details: [src/bot_platform/bots/life/SETUP.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/life/SETUP.md)

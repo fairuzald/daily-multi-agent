@@ -25,21 +25,12 @@ class GuardService:
             return True
         return owner == user_id
 
-    def is_authorized(self, user_id: int) -> bool:
-        owner = self.runtime.state_store.get_owner_user_id()
-        return owner is not None and owner == user_id
-
     @staticmethod
     def unauthorized_message() -> str:
-        return "You are not authorized to use this bot."
+        return "This bot is locked to a different Telegram user."
 
     def ensure_owner(self, user_id: int) -> BotResponse | None:
         if self.claim_or_authorize_owner(user_id):
-            return None
-        return BotResponse(self.unauthorized_message())
-
-    def ensure_authorized(self, user_id: int) -> BotResponse | None:
-        if self.is_authorized(user_id):
             return None
         return BotResponse(self.unauthorized_message())
 
@@ -48,8 +39,8 @@ class GuardService:
             return None
         return BotResponse("No Google Sheet is configured yet. Use /start or /set_sheet and send the sheet link first.")
 
-    def ensure_authorized_with_sheet(self, user_id: int) -> BotResponse | None:
-        auth = self.ensure_authorized(user_id)
+    def ensure_owner_with_sheet(self, user_id: int) -> BotResponse | None:
+        auth = self.ensure_owner(user_id)
         if auth:
             return auth
         return self.ensure_active_sheet()

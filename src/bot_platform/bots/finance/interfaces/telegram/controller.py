@@ -1,57 +1,20 @@
 from __future__ import annotations
 
 import logging
-import re
 
-import httpx
 from telegram import PhotoSize, Update
 from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from bot_platform.bots.finance.application.finance_bot_service import FinanceBotService
 from bot_platform.bots.finance.domain.responses import BotResponse, ReplyContextInput
+from bot_platform.shared.telegram.errors import humanize_processing_error_text
 
 logger = logging.getLogger(__name__)
 
 
 def humanize_processing_error(exc: Exception, *, source: str) -> BotResponse:
-    error_text = str(exc)
-
-    if (
-        "RESOURCE_EXHAUSTED" in error_text
-        or "quota exceeded" in error_text.lower()
-        or "429" in error_text
-        or "temporarily exhausted" in error_text.lower()
-    ):
-        retry_match = re.search(r"retry in ([0-9]+(?:\.[0-9]+)?)s", error_text, flags=re.IGNORECASE)
-        retry_seconds = ""
-        if retry_match:
-            retry_seconds = str(int(float(retry_match.group(1))))
-        if retry_seconds:
-            return BotResponse(
-                f"The AI service is temporarily exhausted. Please wait about {retry_seconds} seconds and try again."
-            )
-        return BotResponse("The AI service is temporarily exhausted. Please wait a bit and try again.")
-
-    if "deadline" in error_text.lower() or "timeout" in error_text.lower():
-        return BotResponse(
-            f"The {source} took too long to process. Please try again with a shorter {source} or simpler input."
-        )
-
-    if "permission" in error_text.lower() or "forbidden" in error_text.lower():
-        return BotResponse(
-            "The bot could not access the AI service for that request. Please check the API key or try again later."
-        )
-
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        body = (exc.response.text or "").strip()
-        return BotResponse(f"HTTP error {status}: {body or error_text}")
-
-    if any(token in error_text.lower() for token in ("openrouter error", "gemini", "upstream", "api error", "payment required", "not found")):
-        return BotResponse(error_text)
-
-    return BotResponse(f"I couldn't process that {source} safely right now. Please try again or send a simpler version.")
+    return BotResponse(humanize_processing_error_text(exc, source=source))
 
 
 class TelegramBotController:

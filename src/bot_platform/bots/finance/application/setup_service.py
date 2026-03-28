@@ -11,8 +11,8 @@ class SetupService:
         self.guards = guards
         self.runtime = guards.runtime
 
-    def _require_authorized(self, user_id: int) -> BotResponse | None:
-        return self.guards.ensure_authorized(user_id)
+    def _require_owner(self, user_id: int) -> BotResponse | None:
+        return self.guards.ensure_owner(user_id)
 
     def handle_start(self, user_id: int) -> BotResponse:
         auth = self.guards.ensure_owner(user_id)
@@ -31,7 +31,7 @@ class SetupService:
         )
 
     def handle_help(self, user_id: int) -> BotResponse:
-        auth = self._require_authorized(user_id)
+        auth = self._require_owner(user_id)
         if auth:
             return auth
         return BotResponse(
@@ -69,7 +69,7 @@ class SetupService:
         )
 
     def handle_full_help(self, user_id: int) -> BotResponse:
-        auth = self._require_authorized(user_id)
+        auth = self._require_owner(user_id)
         if auth:
             return auth
         return BotResponse(
@@ -115,7 +115,7 @@ class SetupService:
         )
 
     def handle_status(self, user_id: int) -> BotResponse:
-        auth = self._require_authorized(user_id)
+        auth = self._require_owner(user_id)
         if auth:
             return auth
         owner = self.runtime.state_store.get_owner_user_id()
@@ -129,12 +129,15 @@ class SetupService:
         )
 
     def handle_whoami(self, user_id: int) -> BotResponse:
+        auth = self._require_owner(user_id)
+        if auth:
+            return auth
         owner = self.runtime.state_store.get_owner_user_id()
-        status = "authorized owner" if owner == user_id else "not authorized"
+        status = "owner" if owner == user_id else "unknown"
         return BotResponse(f"Your Telegram user ID: {user_id}\nStatus: {status}")
 
     def handle_set_sheet(self, user_id: int) -> BotResponse:
-        auth = self._require_authorized(user_id)
+        auth = self._require_owner(user_id)
         if auth:
             return auth
         self.runtime.state_store.set_awaiting_sheet_link(True)
@@ -144,7 +147,7 @@ class SetupService:
         )
 
     def handle_add_payment_method(self, user_id: int, chat_id: int) -> BotResponse:
-        auth = self._require_authorized(user_id)
+        auth = self._require_owner(user_id)
         if auth:
             return auth
         self.runtime.state_store.set_setup_mode(chat_id, "add_payment_method")
@@ -154,7 +157,7 @@ class SetupService:
         )
 
     def handle_add_categories(self, user_id: int, chat_id: int) -> BotResponse:
-        auth = self._require_authorized(user_id)
+        auth = self._require_owner(user_id)
         if auth:
             return auth
         self.runtime.state_store.set_setup_mode(chat_id, "add_categories")

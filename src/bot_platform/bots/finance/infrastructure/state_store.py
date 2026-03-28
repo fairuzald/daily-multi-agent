@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bot_platform.bots.finance.models import InputMode, ParsedTransaction, TransactionRecord
-from bot_platform.shared.persistence.json_store import JsonKeyValueStore
+from bot_platform.shared.persistence.namespaced_state import NamespacedStateStore
 
 
 @dataclass
@@ -30,7 +30,8 @@ class ReplyMessageContext:
 
 class BotStateStore:
     def __init__(self, database_url: str) -> None:
-        self.store = JsonKeyValueStore(database_url)
+        self.shared = NamespacedStateStore(database_url, namespace="finance")
+        self.store = self.shared.store
         self._pending: dict[int, PendingTransactionState] = {}
         self._last_transaction_ids: dict[int, str] = {}
         self._reply_contexts: dict[int, ReplyMessageContext] = {}
@@ -38,16 +39,8 @@ class BotStateStore:
         self._setup_modes: dict[int, str] = {}
 
     @staticmethod
-    def _pending_key(chat_id: int) -> str:
-        return f"pending:{chat_id}"
-
-    @staticmethod
     def _last_transaction_key(chat_id: int) -> str:
         return f"last_transaction:{chat_id}"
-
-    @staticmethod
-    def _reply_context_key(chat_id: int, message_id: int) -> str:
-        return f"reply_context:{chat_id}:{message_id}"
 
     @staticmethod
     def _transaction_snapshot_key(transaction_id: str) -> str:
@@ -57,16 +50,11 @@ class BotStateStore:
     def _setup_mode_key(chat_id: int) -> str:
         return f"setup_mode:{chat_id}"
 
-    @staticmethod
-    def _processed_update_key(update_id: int) -> str:
-        return f"processed_update:{update_id}"
-
     def get_owner_user_id(self) -> int | None:
-        value = self.store.get_value("owner_user_id")
-        return int(value) if value is not None else None
+        return self.shared.get_owner_user_id()
 
     def set_owner_user_id(self, user_id: int) -> None:
-        self.store.set_value("owner_user_id", user_id)
+        self.shared.set_owner_user_id(user_id)
 
     def get_active_sheet_id(self) -> str:
         value = self.store.get_value("active_sheet_id")
@@ -85,8 +73,9 @@ class BotStateStore:
     def set_pending(self, chat_id: int, parsed: ParsedTransaction, input_mode: InputMode = InputMode.TEXT) -> None:
         state = PendingTransactionState(chat_id=chat_id, parsed=parsed, input_mode=input_mode, kind="single")
         self._pending[chat_id] = state
-        self.store.set_value(
-            self._pending_key(chat_id),
+        self.shared.set_pending_payload(
+            chat_id,
+            "pending",
             {
                 "chat_id": chat_id,
                 "kind": "single",
@@ -120,8 +109,9 @@ class BotStateStore:
             shared_payload=dict(shared_payload) if shared_payload else None,
         )
         self._pending[chat_id] = state
-        self.store.set_value(
-            self._pending_key(chat_id),
+        self.shared.set_pending_payload(
+            chat_id,
+            "pending",
             {
                 "chat_id": chat_id,
                 "kind": "group",
@@ -139,7 +129,7 @@ class BotStateStore:
         pending = self._pending.get(chat_id)
         if pending is not None:
             return pending
-        value = self.store.get_value(self._pending_key(chat_id))
+        value = self.shared.get_pending_payload(chat_id, "pending")
         if value is None:
             return None
         kind = str(value.get("kind") or "single")
@@ -160,7 +150,7 @@ class BotStateStore:
 
     def clear_pending(self, chat_id: int) -> None:
         self._pending.pop(chat_id, None)
-        self.store.delete_value(self._pending_key(chat_id))
+        self.shared.clear_pending_payload(chat_id, "pending")
 
     def set_last_transaction_id(self, chat_id: int, transaction_id: str) -> None:
         self._last_transaction_ids[chat_id] = transaction_id
@@ -180,8 +170,9 @@ class BotStateStore:
     def set_reply_context(self, chat_id: int, message_id: int, context: ReplyMessageContext) -> None:
         key = (chat_id, message_id)
         self._reply_contexts[key] = context
-        self.store.set_value(
-            self._reply_context_key(chat_id, message_id),
+        self.shared.set_reply_context_payload(
+            chat_id,
+            message_id,
             {
                 "kind": context.kind,
                 "transaction_id": context.transaction_id,
@@ -196,7 +187,7 @@ class BotStateStore:
         context = self._reply_contexts.get(key)
         if context is not None:
             return context
-        value = self.store.get_value(self._reply_context_key(chat_id, message_id))
+        value = self.shared.get_reply_context_payload(chat_id, message_id)
         if value is None:
             return None
         context = ReplyMessageContext(
@@ -242,7 +233,7 @@ class BotStateStore:
         self.store.delete_value(self._setup_mode_key(chat_id))
 
     def claim_processed_update(self, update_id: int) -> bool:
-        return self.store.claim_value(self._processed_update_key(update_id), {"update_id": update_id})
+        return self.shared.claim_processed_update(update_id)
 
     def release_processed_update(self, update_id: int) -> None:
-        self.store.delete_value(self._processed_update_key(update_id))
+        self.shared.release_processed_update(update_id)

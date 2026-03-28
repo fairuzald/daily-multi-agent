@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from bot_platform.bots.finance.domain.multi_transaction import build_ai_multi_transaction_candidate
 from bot_platform.bots.finance.models import ParsedTransaction, TransactionRecord
+from bot_platform.shared.ai.gemini_base import BaseGeminiClient
 
 
 class SourceKind(str, Enum):
@@ -19,46 +20,14 @@ class SourceKind(str, Enum):
     IMAGE = "image"
 
 
-class GeminiClient:
+class GeminiClient(BaseGeminiClient):
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash") -> None:
-        self.api_key = api_key
-        self.model_name = model_name
-        self._transaction_prompt = self._load_prompt("transaction_parser.txt")
-        self._multi_transaction_prompt = self._load_prompt("multi_transaction_parser.txt")
-        self._image_prompt = self._load_prompt("receipt_image_parser.txt")
-        self._correction_prompt = self._load_prompt("transaction_correction_parser.txt")
-
-    @staticmethod
-    def _load_prompt(file_name: str) -> str:
-        prompt_path = Path(__file__).resolve().parent.parent / "prompts" / file_name
-        return prompt_path.read_text(encoding="utf-8")
-
-    def transcribe_voice_note(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-        if not audio_bytes:
-            raise ValueError("audio payload is empty")
-        try:
-            from google import genai  # type: ignore
-        except ImportError as exc:
-            raise RuntimeError("google-genai is not installed. Run `poetry install` first.") from exc
-
-        client = genai.Client(api_key=self.api_key)
-        response = client.models.generate_content(
-            model=self.model_name,
-            contents=[
-                types.Part.from_text(
-                    text=(
-                        "Transcribe this Indonesian Telegram voice note. "
-                        "Return only the spoken transcript text without Markdown or explanation."
-                    )
-                ),
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-            ],
-        )
-
-        transcript = (getattr(response, "text", "") or "").strip()
-        if not transcript:
-            raise ValueError("Gemini returned an empty transcription")
-        return transcript
+        super().__init__(api_key=api_key, model_name=model_name)
+        prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
+        self._transaction_prompt = self.load_prompt(prompt_dir, "transaction_parser.txt")
+        self._multi_transaction_prompt = self.load_prompt(prompt_dir, "multi_transaction_parser.txt")
+        self._image_prompt = self.load_prompt(prompt_dir, "receipt_image_parser.txt")
+        self._correction_prompt = self.load_prompt(prompt_dir, "transaction_correction_parser.txt")
 
     def parse_transaction(self, raw_input: str) -> ParsedTransaction:
         if not raw_input.strip():
@@ -118,7 +87,7 @@ class GeminiClient:
             raise ValueError("Gemini returned an empty response")
 
         try:
-            return self._normalize_payload(json.loads(self._extract_json_text(text)))
+            return self._normalize_payload(json.loads(self.extract_json_text(text)))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Gemini response was not valid JSON: {text}") from exc
 
@@ -149,7 +118,7 @@ class GeminiClient:
             raise ValueError("Gemini returned an empty response for image parsing")
 
         try:
-            payload = self._normalize_payload(json.loads(self._extract_json_text(text)))
+            payload = self._normalize_payload(json.loads(self.extract_json_text(text)))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Gemini image response was not valid JSON: {text}") from exc
 
@@ -174,7 +143,7 @@ class GeminiClient:
             raise ValueError("Gemini returned an empty response for multi-transaction extraction")
 
         try:
-            payload = json.loads(self._extract_json_text(text))
+            payload = json.loads(self.extract_json_text(text))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Gemini multi-transaction response was not valid JSON: {text}") from exc
         if not isinstance(payload, dict):
@@ -224,25 +193,13 @@ class GeminiClient:
             raise ValueError("Gemini returned an empty response for transaction correction")
 
         try:
-            payload = self._normalize_payload(json.loads(self._extract_json_text(text)))
+            payload = self._normalize_payload(json.loads(self.extract_json_text(text)))
         except json.JSONDecodeError as exc:
             raise ValueError(f"Gemini correction response was not valid JSON: {text}") from exc
 
         if not str(payload.get("raw_input") or "").strip():
             payload["raw_input"] = correction_input.strip()
         return payload
-
-    @staticmethod
-    def _extract_json_text(text: str) -> str:
-        stripped = text.strip()
-        if stripped.startswith("```"):
-            lines = stripped.splitlines()
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            stripped = "\n".join(lines).strip()
-        return stripped
 
     @staticmethod
     def _normalize_payload(payload: dict[str, Any]) -> dict[str, Any]:
