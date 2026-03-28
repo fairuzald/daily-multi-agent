@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -11,15 +12,17 @@ class MultiTransactionCandidate:
     item_inputs: list[str]
     item_labels: list[str]
     shared_total_amount: int | None = None
+    item_amounts: list[int | None] = field(default_factory=list)
+    shared_payload: dict[str, Any] | None = None
 
 
 def detect_multi_transaction(raw_text: str) -> MultiTransactionCandidate | None:
-    text = " ".join(raw_text.strip().split())
+    text = _normalize_detection_text(raw_text)
     if not text:
         return None
 
     payment_phrase, body = _extract_trailing_payment_phrase(text)
-    clauses = [part.strip(" ,.") for part in re.split(r"\s+dan\s+", body, flags=re.IGNORECASE) if part.strip(" ,.")] 
+    clauses = _split_item_clauses(body)
     if len(clauses) < 2:
         return None
 
@@ -41,8 +44,8 @@ def detect_multi_transaction(raw_text: str) -> MultiTransactionCandidate | None:
             item_labels=[_strip_amount(part) for part in cleaned_clauses],
         )
 
-    all_amounts = re.findall(r"\d[\d\.]*", body)
-    if len(all_amounts) == 1 and re.search(r"\b(?:seharga|harga|total(?:nya)?|senilai)\b", body, flags=re.IGNORECASE):
+    all_amounts = _find_amount_tokens(body)
+    if len(all_amounts) == 1 and re.search(r"\b(?:seharga|harga(?:nya)?|total(?:nya)?|senilai)\b", body, flags=re.IGNORECASE):
         shared_total_amount = _parse_amount(all_amounts[0])
         if shared_total_amount is None:
             return None
@@ -59,7 +62,7 @@ def detect_multi_transaction(raw_text: str) -> MultiTransactionCandidate | None:
 
 
 def parse_group_allocation_reply(message_text: str, expected_count: int, shared_total_amount: int) -> list[int] | None:
-    amounts = [_parse_amount(match) for match in re.findall(r"\d[\d\.]*", message_text)]
+    amounts = [_parse_amount(match) for match in _find_amount_tokens(message_text)]
     if len(amounts) != expected_count or any(amount is None for amount in amounts):
         return None
     parsed_amounts = [int(amount) for amount in amounts if amount is not None]
@@ -75,6 +78,62 @@ def even_split_amounts(total_amount: int, item_count: int) -> list[int]:
     for index in range(remainder):
         allocations[index] += 1
     return allocations
+
+
+def build_ai_multi_transaction_candidate(raw_input: str, payload: dict[str, Any]) -> MultiTransactionCandidate | None:
+    kind = str(payload.get("kind") or "").strip().lower()
+    if kind not in {"explicit", "ambiguous"}:
+        return None
+
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return None
+
+    item_labels: list[str] = []
+    item_inputs: list[str] = []
+    item_amounts: list[int | None] = []
+    for raw_item in raw_items:
+        label = ""
+        amount: int | None = None
+        if isinstance(raw_item, dict):
+            label = str(raw_item.get("label") or raw_item.get("item") or raw_item.get("name") or "").strip()
+            amount = _parse_amount(str(raw_item.get("amount") or "").strip()) if raw_item.get("amount") not in (None, "") else None
+        elif isinstance(raw_item, str):
+            label = raw_item.strip()
+        if not label:
+            continue
+        item_labels.append(label)
+        item_inputs.append(label)
+        item_amounts.append(amount)
+
+    if len(item_labels) < 2:
+        return None
+
+    shared_total_amount = None
+    if payload.get("shared_total_amount") not in (None, ""):
+        shared_total_amount = _parse_amount(str(payload.get("shared_total_amount")))
+
+    if kind == "explicit" and any(amount is None for amount in item_amounts):
+        return None
+    if kind == "ambiguous" and shared_total_amount is None:
+        return None
+
+    shared_payload = payload.get("shared_payload")
+    if not isinstance(shared_payload, dict):
+        shared_payload = None
+    elif not str(shared_payload.get("raw_input") or "").strip():
+        shared_payload = dict(shared_payload)
+        shared_payload["raw_input"] = raw_input
+
+    return MultiTransactionCandidate(
+        kind=kind,
+        raw_input=raw_input,
+        item_inputs=item_inputs,
+        item_labels=item_labels,
+        shared_total_amount=shared_total_amount,
+        item_amounts=item_amounts,
+        shared_payload=shared_payload,
+    )
 
 
 def _extract_trailing_payment_phrase(text: str) -> tuple[str, str]:
@@ -130,18 +189,23 @@ def _build_item_input(date_phrase: str, verb: str, shared_context: str, clause: 
 
 
 def _extract_last_amount(text: str) -> int | None:
-    matches = re.findall(r"\d[\d\.]*", text)
+    matches = _find_amount_tokens(text)
     if not matches:
         return None
     return _parse_amount(matches[-1])
 
 
 def _strip_amount(text: str) -> str:
-    return re.sub(r"\s*\d[\d\.]*\s*$", "", text).strip(" ,.")
+    return re.sub(r"\s*\d[\d\.]*(?:\s*(?:k|rb|ribu|jt|juta))?\s*$", "", text, flags=re.IGNORECASE).strip(" ,.")
 
 
 def _strip_shared_total_phrase(text: str) -> str:
-    return re.sub(r"\b(?:seharga|harga|total(?:nya)?|senilai)\b\s*\d[\d\.]*(?:\s*[a-zA-Z]*)?$", "", text, flags=re.IGNORECASE).strip(" ,.")
+    return re.sub(
+        r"\b(?:seharga|harga(?:nya)?|total(?:nya)?|senilai)\b\s*\d[\d\.]*(?:\s*(?:k|rb|ribu|jt|juta))?(?:\s*[a-zA-Z]*)?$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" ,.")
 
 
 def _strip_leading_context(text: str, *, date_phrase: str, verb: str) -> str:
@@ -155,5 +219,36 @@ def _strip_leading_context(text: str, *, date_phrase: str, verb: str) -> str:
 
 
 def _parse_amount(text: str) -> int | None:
-    digits = "".join(char for char in text if char.isdigit())
-    return int(digits) if digits else None
+    raw = text.strip().lower()
+    digits = "".join(char for char in raw if char.isdigit())
+    if not digits:
+        return None
+    value = int(digits)
+    if re.search(r"(?:\bk\b|\brb\b|ribu)", raw):
+        return value * 1_000
+    if re.search(r"(?:\bjt\b|juta)", raw):
+        return value * 1_000_000
+    return value
+
+
+def _find_amount_tokens(text: str) -> list[str]:
+    return re.findall(r"\d[\d\.]*(?:\s*(?:k|rb|ribu|jt|juta))?", text, flags=re.IGNORECASE)
+
+
+def _normalize_detection_text(text: str) -> str:
+    normalized = " ".join(text.strip().split())
+    normalized = re.sub(r"\b(?:eh|emm|hmm|anu|kayak)\b", " ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _clean_clause_text(text: str) -> str:
+    cleaned = re.sub(r"\b(?:eh|emm|hmm|anu)\b", " ", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" ,.?")
+
+
+def _split_item_clauses(text: str) -> list[str]:
+    normalized = re.sub(r"\s+(?:dan|sama)\s+", ",", text, flags=re.IGNORECASE)
+    parts = [_clean_clause_text(part) for part in normalized.split(",")]
+    return [part for part in parts if part]

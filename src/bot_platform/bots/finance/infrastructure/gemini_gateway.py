@@ -9,6 +9,7 @@ from typing import Any
 from google.genai import types
 from pydantic import ValidationError
 
+from bot_platform.bots.finance.domain.multi_transaction import build_ai_multi_transaction_candidate
 from bot_platform.bots.finance.models import ParsedTransaction, TransactionRecord
 
 
@@ -23,6 +24,7 @@ class GeminiClient:
         self.api_key = api_key
         self.model_name = model_name
         self._transaction_prompt = self._load_prompt("transaction_parser.txt")
+        self._multi_transaction_prompt = self._load_prompt("multi_transaction_parser.txt")
         self._image_prompt = self._load_prompt("receipt_image_parser.txt")
         self._correction_prompt = self._load_prompt("transaction_correction_parser.txt")
 
@@ -67,6 +69,12 @@ class GeminiClient:
         except ValidationError as exc:
             raise ValueError(f"Gemini returned invalid transaction payload: {exc}") from exc
         return parsed
+
+    def extract_multi_transaction(self, raw_input: str):
+        if not raw_input.strip():
+            raise ValueError("raw_input cannot be empty")
+        payload = self._call_multi_transaction_model(raw_input)
+        return build_ai_multi_transaction_candidate(raw_input, payload)
 
     def parse_transaction_image(
         self,
@@ -149,6 +157,37 @@ class GeminiClient:
             payload["raw_input"] = caption.strip() or "image transaction proof"
         return payload
 
+    def _call_multi_transaction_model(self, raw_input: str) -> dict[str, Any]:
+        try:
+            from google import genai  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("google-genai is not installed. Run `poetry install` first.") from exc
+
+        client = genai.Client(api_key=self.api_key)
+        response = client.models.generate_content(
+            model=self.model_name,
+            contents=f"{self._multi_transaction_prompt}\n\nUser input:\n{raw_input}",
+        )
+
+        text = getattr(response, "text", "") or ""
+        if not text:
+            raise ValueError("Gemini returned an empty response for multi-transaction extraction")
+
+        try:
+            payload = json.loads(self._extract_json_text(text))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Gemini multi-transaction response was not valid JSON: {text}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(
+                f"Gemini multi-transaction response was not valid JSON: expected a JSON object, got {type(payload).__name__}"
+            )
+        shared_payload = payload.get("shared_payload")
+        if isinstance(shared_payload, dict):
+            normalized_shared_payload = self._normalize_payload(shared_payload)
+            normalized_shared_payload["raw_input"] = raw_input
+            payload["shared_payload"] = normalized_shared_payload
+        return payload
+
     def _call_correction_model(self, original: TransactionRecord, correction_input: str) -> dict[str, Any]:
         try:
             from google import genai  # type: ignore
@@ -211,6 +250,8 @@ class GeminiClient:
 
         if normalized.get("type") is None:
             normalized["type"] = None
+        else:
+            normalized["type"] = GeminiClient._normalize_transaction_type(normalized.get("type"))
 
         for field_name in (
             "currency",
@@ -282,6 +323,26 @@ class GeminiClient:
                 normalized.get("needs_confirmation")
             )
         return normalized
+
+    @staticmethod
+    def _normalize_transaction_type(value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip().lower()
+        type_map = {
+            "expense": "expense",
+            "pengeluaran": "expense",
+            "income": "income",
+            "pemasukan": "income",
+            "transfer": "transfer",
+            "investment in": "investment_in",
+            "investment_in": "investment_in",
+            "investasi masuk": "investment_in",
+            "investment out": "investment_out",
+            "investment_out": "investment_out",
+            "investasi keluar": "investment_out",
+        }
+        return type_map.get(normalized, normalized)
 
     @staticmethod
     def _looks_like_placeholder_date(value: str) -> bool:

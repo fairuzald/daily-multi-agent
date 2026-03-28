@@ -25,6 +25,9 @@ class RotatingAIClient:
     def parse_transaction(self, raw_input: str):
         return self._run(lambda client: client.parse_transaction(raw_input))
 
+    def extract_multi_transaction(self, raw_input: str):
+        return self._run(lambda client: client.extract_multi_transaction(raw_input))
+
     def parse_transaction_image(self, image_bytes: bytes, mime_type: str = "image/jpeg", caption: str = ""):
         return self._run(lambda client: client.parse_transaction_image(image_bytes=image_bytes, mime_type=mime_type, caption=caption))
 

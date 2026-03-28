@@ -49,6 +49,22 @@ class JsonKeyValueStore:
             )
             conn.commit()
 
+    def claim_value(self, key: str, value: Any) -> bool:
+        payload = json.dumps(value)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {self.table_name} (state_key, state_value)
+                VALUES (%s, %s::jsonb)
+                ON CONFLICT (state_key) DO NOTHING
+                RETURNING state_key
+                """,
+                (key, payload),
+            )
+            inserted = cur.fetchone() is not None
+            conn.commit()
+            return inserted
+
     def delete_value(self, key: str) -> None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(f"DELETE FROM {self.table_name} WHERE state_key = %s", (key,))

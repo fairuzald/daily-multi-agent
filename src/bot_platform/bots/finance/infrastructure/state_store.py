@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from bot_platform.bots.finance.models import InputMode, ParsedTransaction, TransactionRecord
 from bot_platform.shared.persistence.json_store import JsonKeyValueStore
@@ -16,6 +17,8 @@ class PendingTransactionState:
     item_inputs: list[str] = field(default_factory=list)
     item_labels: list[str] = field(default_factory=list)
     shared_total_amount: int | None = None
+    item_amounts: list[int | None] = field(default_factory=list)
+    shared_payload: dict[str, Any] | None = None
 
 
 @dataclass
@@ -53,6 +56,10 @@ class BotStateStore:
     @staticmethod
     def _setup_mode_key(chat_id: int) -> str:
         return f"setup_mode:{chat_id}"
+
+    @staticmethod
+    def _processed_update_key(update_id: int) -> str:
+        return f"processed_update:{update_id}"
 
     def get_owner_user_id(self) -> int | None:
         value = self.store.get_value("owner_user_id")
@@ -96,6 +103,8 @@ class BotStateStore:
         item_inputs: list[str],
         item_labels: list[str],
         shared_total_amount: int,
+        item_amounts: list[int | None] | None = None,
+        shared_payload: dict[str, Any] | None = None,
         input_mode: InputMode = InputMode.TEXT,
     ) -> None:
         state = PendingTransactionState(
@@ -107,6 +116,8 @@ class BotStateStore:
             item_inputs=list(item_inputs),
             item_labels=list(item_labels),
             shared_total_amount=shared_total_amount,
+            item_amounts=list(item_amounts or []),
+            shared_payload=dict(shared_payload) if shared_payload else None,
         )
         self._pending[chat_id] = state
         self.store.set_value(
@@ -119,6 +130,8 @@ class BotStateStore:
                 "item_inputs": list(item_inputs),
                 "item_labels": list(item_labels),
                 "shared_total_amount": shared_total_amount,
+                "item_amounts": list(item_amounts or []),
+                "shared_payload": dict(shared_payload) if shared_payload else None,
             },
         )
 
@@ -139,6 +152,8 @@ class BotStateStore:
             item_inputs=list(value.get("item_inputs") or []),
             item_labels=list(value.get("item_labels") or []),
             shared_total_amount=int(value["shared_total_amount"]) if value.get("shared_total_amount") is not None else None,
+            item_amounts=list(value.get("item_amounts") or []),
+            shared_payload=dict(value.get("shared_payload")) if isinstance(value.get("shared_payload"), dict) else None,
         )
         self._pending[chat_id] = pending
         return pending
@@ -225,3 +240,9 @@ class BotStateStore:
     def clear_setup_mode(self, chat_id: int) -> None:
         self._setup_modes.pop(chat_id, None)
         self.store.delete_value(self._setup_mode_key(chat_id))
+
+    def claim_processed_update(self, update_id: int) -> bool:
+        return self.store.claim_value(self._processed_update_key(update_id), {"update_id": update_id})
+
+    def release_processed_update(self, update_id: int) -> None:
+        self.store.delete_value(self._processed_update_key(update_id))

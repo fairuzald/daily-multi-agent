@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
+from bot_platform.bots.finance.domain.multi_transaction import build_ai_multi_transaction_candidate
 from bot_platform.bots.finance.infrastructure.gemini_gateway import GeminiClient
 from bot_platform.bots.finance.models import ParsedTransaction, TransactionRecord
 
@@ -30,6 +31,7 @@ class OpenRouterClient:
         self.app_name = app_name
         self._http_client = http_client
         self._transaction_prompt = GeminiClient._load_prompt("transaction_parser.txt")
+        self._multi_transaction_prompt = GeminiClient._load_prompt("multi_transaction_parser.txt")
         self._image_prompt = GeminiClient._load_prompt("receipt_image_parser.txt")
         self._correction_prompt = GeminiClient._load_prompt("transaction_correction_parser.txt")
         self._model_start_index = {"text": 0, "vision": 0, "audio": 0}
@@ -83,6 +85,19 @@ class OpenRouterClient:
             return ParsedTransaction.model_validate(payload)
         except ValidationError as exc:
             raise ValueError(f"OpenRouter returned invalid transaction payload: {exc}") from exc
+
+    def extract_multi_transaction(self, raw_input: str):
+        if not raw_input.strip():
+            raise ValueError("raw_input cannot be empty")
+        payload = self._call_json_model(
+            capability="text",
+            models=self.text_models,
+            messages=[{"role": "user", "content": f"{self._multi_transaction_prompt}\n\nUser input:\n{raw_input}"}],
+            empty_response_error="OpenRouter returned an empty response for multi-transaction extraction",
+            invalid_response_error="OpenRouter multi-transaction response was not valid JSON",
+            normalize_transaction_payload=False,
+        )
+        return build_ai_multi_transaction_candidate(raw_input, payload)
 
     def parse_transaction_image(
         self,
@@ -175,6 +190,7 @@ class OpenRouterClient:
         messages: list[dict[str, Any]],
         empty_response_error: str,
         invalid_response_error: str,
+        normalize_transaction_payload: bool = True,
     ) -> dict[str, Any]:
         def operation(model: str) -> dict[str, Any]:
             response = self._chat_completion(
@@ -186,9 +202,17 @@ class OpenRouterClient:
             if not text:
                 raise ValueError(empty_response_error)
             try:
-                return GeminiClient._normalize_payload(json.loads(GeminiClient._extract_json_text(text)))
+                payload = json.loads(GeminiClient._extract_json_text(text))
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{invalid_response_error}: {text}") from exc
+            if not isinstance(payload, dict):
+                raise ValueError(f"{invalid_response_error}: expected a JSON object, got {type(payload).__name__}")
+            if normalize_transaction_payload:
+                return GeminiClient._normalize_payload(payload)
+            shared_payload = payload.get("shared_payload")
+            if isinstance(shared_payload, dict):
+                payload["shared_payload"] = GeminiClient._normalize_payload(shared_payload)
+            return payload
 
         return self._run_model_pool(capability, models, operation)
 

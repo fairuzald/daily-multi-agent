@@ -140,7 +140,7 @@ class FinanceBotPolicy:
         lines.extend(
             [
                 "",
-                "Reply with one amount per item in the same order, or reply 'force' to split the total evenly and save.",
+                "Reply with one amount per item in the same order, or reply 'force' to keep the shared total and save as one grouped purchase.",
             ]
         )
         return BotResponse("\n".join(lines), reply_context=ReplyMessageContext(kind="confirmation"))
