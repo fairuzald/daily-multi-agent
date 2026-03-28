@@ -197,8 +197,17 @@ class GoogleSheetsClient:
         rows: list[list[str]],
         existing_merges: list[dict[str, int]],
     ) -> list[dict[str, object]]:
+        requests: list[dict[str, object]] = [
+            {
+                "unmergeCells": {
+                    "range": dict(merge_range),
+                }
+            }
+            for merge_range in existing_merges
+        ]
+
         if len(rows) <= 2:
-            return []
+            return requests
 
         group_values = [row[14] if len(row) > 14 else "" for row in rows]
         merge_requests: list[dict[str, object]] = []
@@ -212,10 +221,8 @@ class GoogleSheetsClient:
                 )
             )
 
-        requests, merged_ranges = cls._reconcile_merge_requests(
-            merge_requests,
-            existing_merges=existing_merges,
-        )
+        requests.extend(merge_requests)
+        merged_ranges = [dict(request["mergeCells"]["range"]) for request in merge_requests if "mergeCells" in request]
         requests.extend(cls._build_center_alignment_requests(merged_ranges))
         return requests
 

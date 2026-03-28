@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from bot_platform.bots.finance.infrastructure.state_store import ReplyMessageContext
-
 
 class BotResponse(str):
-    def __new__(cls, text: str, reply_context: ReplyMessageContext | None = None):
+    def __new__(cls, text: str, reply_context: object | None = None):
         obj = str.__new__(cls, text)
         obj.reply_context = reply_context
         return obj

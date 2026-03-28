@@ -26,11 +26,11 @@ class CommandService:
         self.persistence = persistence
         self.runtime = guards.runtime
 
-    def _require_authorized_with_sheet(self, user_id: int) -> BotResponse | None:
-        return self.guards.ensure_authorized_with_sheet(user_id)
+    def _require_owner_with_sheet(self, user_id: int) -> BotResponse | None:
+        return self.guards.ensure_owner_with_sheet(user_id)
 
     def handle_month_command(self, user_id: int, month: str | None = None) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         normalized_month = FinanceBotPolicy.normalize_month(month)
@@ -43,7 +43,7 @@ class CommandService:
         )
 
     def handle_today_command(self, user_id: int, day: str | None = None) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         target_day = FinanceBotPolicy.normalize_day(day)
@@ -57,7 +57,7 @@ class CommandService:
         )
 
     def handle_week_command(self, user_id: int, week: str | None = None) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         week_start, week_end, label = FinanceBotPolicy.normalize_week(week)
@@ -70,13 +70,13 @@ class CommandService:
         )
 
     def handle_delete_last_command(self, user_id: int, chat_id: int) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_delete_command(chat_id, reply_context=None)
 
     def handle_delete_reply_command(self, user_id: int, chat_id: int, reply_context: ReplyContextInput | None) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_delete_command(chat_id, reply_context=reply_context)
@@ -88,7 +88,7 @@ class CommandService:
         correction_input: str,
         message_datetime: datetime | None = None,
     ) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_edit_command(chat_id, correction_input, reply_context=None, message_datetime=message_datetime)
@@ -101,7 +101,7 @@ class CommandService:
         reply_context: ReplyContextInput | None,
         message_datetime: datetime | None = None,
     ) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_edit_command(chat_id, correction_input, reply_context=reply_context, message_datetime=message_datetime)
@@ -113,7 +113,7 @@ class CommandService:
         period: str,
         message_datetime: datetime | None = None,
     ) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_read_command(f"show {category} this {period}", message_datetime)
@@ -126,7 +126,7 @@ class CommandService:
         amount: int,
         category: str = "",
     ) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_budget_set(
@@ -134,13 +134,13 @@ class CommandService:
         )
 
     def handle_budget_show_command(self, user_id: int, period: str, message_datetime: datetime | None = None) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_budget_show(ParsedCommand(intent="budget_show", period=period), message_datetime)
 
     def handle_compare_month_command(self, user_id: int, message_datetime: datetime | None = None) -> BotResponse:
-        guard_error = self._require_authorized_with_sheet(user_id)
+        guard_error = self._require_owner_with_sheet(user_id)
         if guard_error:
             return guard_error
         return self._handle_compare_month(message_datetime)
