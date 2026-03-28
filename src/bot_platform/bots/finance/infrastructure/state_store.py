@@ -56,6 +56,12 @@ class BotStateStore:
     def set_owner_user_id(self, user_id: int) -> None:
         self.shared.set_owner_user_id(user_id)
 
+    def get_owner_chat_id(self) -> int | None:
+        return self.shared.get_owner_chat_id()
+
+    def set_owner_chat_id(self, chat_id: int) -> None:
+        self.shared.set_owner_chat_id(chat_id)
+
     def get_active_sheet_id(self) -> str:
         value = self.store.get_value("active_sheet_id")
         return str(value or "")

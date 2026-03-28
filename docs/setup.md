@@ -20,7 +20,6 @@ Core env:
 - `PRIMARY_AI_PROVIDER`
 - `GEMINI_API_KEY` and/or `OPENROUTER_API_KEY`
 - `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `GOOGLE_SHARE_HELP_EMAILS` optional, informational only
 - `DEFAULT_TIMEZONE`
 - `RATE_LIMIT_WINDOW_SECONDS`
 - `RATE_LIMIT_WEBHOOK_MAX_REQUESTS_PER_IP`
@@ -56,7 +55,6 @@ Setup:
 5. Put the raw JSON into `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 The service account email is the `client_email` inside that JSON.
-If you set `GOOGLE_SHARE_HELP_EMAILS`, treat it as setup documentation only. It does not change which identity the bot uses. Google access still comes from `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 ## Finance Bot Setup
 
@@ -64,6 +62,11 @@ You also need:
 
 - a Google Sheet shared with the service account as `Editor`
 - `GOOGLE_SHEET_ID` or the `/start` flow to connect a sheet
+
+First use:
+
+- send `/start` from the owner account in that environment first
+- then connect the sheet
 
 Finance bot docs:
 
@@ -75,6 +78,10 @@ You also need:
 
 - `LIFE_GOOGLE_CALENDAR_ID` if you want calendar sync
 - `LIFE_REMINDER_TICK_TOKEN` if you want Telegram reminders
+
+First use:
+
+- send `/start` from the owner account in that environment first
 
 Important:
 

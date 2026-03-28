@@ -18,19 +18,23 @@ class GuardService:
     def __init__(self, runtime: FinanceBotRuntime) -> None:
         self.runtime = runtime
 
-    def claim_or_authorize_owner(self, user_id: int) -> bool:
+    def claim_or_authorize_owner(self, user_id: int, chat_id: int | None = None) -> bool:
         owner = self.runtime.state_store.get_owner_user_id()
         if owner is None:
             self.runtime.state_store.set_owner_user_id(user_id)
+            if chat_id is not None:
+                self.runtime.state_store.set_owner_chat_id(chat_id)
             return True
+        if owner == user_id and chat_id is not None and self.runtime.state_store.get_owner_chat_id() is None:
+            self.runtime.state_store.set_owner_chat_id(chat_id)
         return owner == user_id
 
     @staticmethod
     def unauthorized_message() -> str:
-        return "This bot is locked to a different Telegram user."
+        return "This bot is locked to a different Telegram user. Send /whoami to compare your current Telegram user ID with the stored owner."
 
-    def ensure_owner(self, user_id: int) -> BotResponse | None:
-        if self.claim_or_authorize_owner(user_id):
+    def ensure_owner(self, user_id: int, chat_id: int | None = None) -> BotResponse | None:
+        if self.claim_or_authorize_owner(user_id, chat_id):
             return None
         return BotResponse(self.unauthorized_message())
 

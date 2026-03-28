@@ -11,11 +11,11 @@ class SetupService:
         self.guards = guards
         self.runtime = guards.runtime
 
-    def _require_owner(self, user_id: int) -> BotResponse | None:
-        return self.guards.ensure_owner(user_id)
+    def _require_owner(self, user_id: int, chat_id: int | None = None) -> BotResponse | None:
+        return self.guards.ensure_owner(user_id, chat_id)
 
-    def handle_start(self, user_id: int) -> BotResponse:
-        auth = self.guards.ensure_owner(user_id)
+    def handle_start(self, user_id: int, chat_id: int) -> BotResponse:
+        auth = self.guards.ensure_owner(user_id, chat_id)
         if auth:
             return auth
         if not self.runtime.state_store.get_active_sheet_id():
@@ -27,11 +27,13 @@ class SetupService:
         return BotResponse(
             "Finance bot is running.\n\n"
             "Active sheet is configured.\n"
-            "Use /help to see commands and input examples."
+            "Use /help to see commands and input examples.\n"
+            "Use /whoami if you need to verify the owner lock.\n"
+            "If this is a new environment, run /start first from the owner account."
         )
 
-    def handle_help(self, user_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+    def handle_help(self, user_id: int, chat_id: int) -> BotResponse:
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         return BotResponse(
@@ -62,14 +64,17 @@ class SetupService:
             "/today\n"
             "/week\n"
             "/month\n"
+            "/whoami\n"
             "/budget_show\n"
             "/compare_month\n\n"
-            "Use /fullhelp for the full command list.\n\n"
+            "Use /fullhelp for the full command list.\n"
+            "Use /whoami to compare your current Telegram IDs with the stored owner.\n"
+            "If this is a new environment, run /start first from the owner account.\n\n"
             f"For sheet setup, share your sheet with this service account as Editor:\n`{self.runtime.service_account_email}`"
         )
 
-    def handle_full_help(self, user_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+    def handle_full_help(self, user_id: int, chat_id: int) -> BotResponse:
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         return BotResponse(
@@ -92,6 +97,9 @@ class SetupService:
             "/status\n"
             "/whoami\n"
             "/set_sheet\n\n"
+            "Identity and owner check:\n"
+            "/whoami shows your current Telegram user ID and chat ID, plus the stored owner IDs.\n\n"
+            "Run /start first from the owner account in each environment before using the bot.\n\n"
             "Summary commands:\n"
             "/today [YYYY-MM-DD]\n"
             "/week [YYYY-Www]\n"
@@ -114,30 +122,38 @@ class SetupService:
             f"`{self.runtime.service_account_email}`"
         )
 
-    def handle_status(self, user_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+    def handle_status(self, user_id: int, chat_id: int) -> BotResponse:
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         owner = self.runtime.state_store.get_owner_user_id()
+        owner_chat_id = self.runtime.state_store.get_owner_chat_id()
         active_sheet = self.runtime.state_store.get_active_sheet_id() or "-"
         awaiting = "yes" if self.runtime.state_store.is_awaiting_sheet_link() else "no"
         return BotResponse(
             f"Owner Telegram user ID: {owner}\n"
+            f"Owner Telegram chat ID: {owner_chat_id or '-'}\n"
             f"Active sheet ID: {active_sheet}\n"
             f"Awaiting sheet link: {awaiting}\n"
             f"Service account email: {self.runtime.service_account_email}"
         )
 
-    def handle_whoami(self, user_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+    def handle_whoami(self, user_id: int, chat_id: int) -> BotResponse:
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         owner = self.runtime.state_store.get_owner_user_id()
-        status = "owner" if owner == user_id else "unknown"
-        return BotResponse(f"Your Telegram user ID: {user_id}\nStatus: {status}")
+        owner_chat_id = self.runtime.state_store.get_owner_chat_id()
+        return BotResponse(
+            f"Your Telegram user ID: {user_id}\n"
+            f"Your Telegram chat ID: {chat_id}\n"
+            f"Stored owner user ID: {owner or '-'}\n"
+            f"Stored owner chat ID: {owner_chat_id or '-'}\n"
+            f"Owner match: {'yes' if owner == user_id else 'no'}"
+        )
 
-    def handle_set_sheet(self, user_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+    def handle_set_sheet(self, user_id: int, chat_id: int) -> BotResponse:
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         self.runtime.state_store.set_awaiting_sheet_link(True)
@@ -147,7 +163,7 @@ class SetupService:
         )
 
     def handle_add_payment_method(self, user_id: int, chat_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         self.runtime.state_store.set_setup_mode(chat_id, "add_payment_method")
@@ -157,7 +173,7 @@ class SetupService:
         )
 
     def handle_add_categories(self, user_id: int, chat_id: int) -> BotResponse:
-        auth = self._require_owner(user_id)
+        auth = self._require_owner(user_id, chat_id)
         if auth:
             return auth
         self.runtime.state_store.set_setup_mode(chat_id, "add_categories")

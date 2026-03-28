@@ -33,6 +33,9 @@ class LifeBotService:
         self._claim_or_require_owner(user_id, chat_id)
         return LifeBotResponse(
             "Life bot is ready.\n\n"
+            "First use:\n"
+            "- run /start first from the owner account in this environment\n"
+            "- then use /whoami if you need to verify the stored owner and chat IDs\n\n"
             "What each type means:\n"
             "- task = something you must do\n"
             "- reminder = ping me at a time\n"
@@ -398,6 +401,8 @@ class LifeBotService:
 
     def _ensure_owner(self, user_id: int) -> None:
         owner = self.state_store.get_owner_user_id()
+        if owner is None:
+            raise PermissionError("No owner is set yet. Send /start first from the owner account.")
         if owner != user_id:
             raise PermissionError("This bot is locked to a different Telegram user. Send /whoami to compare your current Telegram user ID with the stored owner.")
 

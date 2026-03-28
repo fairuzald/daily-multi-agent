@@ -28,6 +28,7 @@ Private Telegram life admin bot for:
 
 - `/start`
 - `/help`
+- `/whoami`
 - `/status`
 - `/today` = only today
 - `/tomorrow` = only tomorrow
@@ -47,6 +48,11 @@ Private Telegram life admin bot for:
 - `follow up with Aldi next Tuesday 8pm`
 - `mom birthday 12 May`
 - `pay wifi tomorrow and follow up with Aldi on Friday 8pm`
+
+## First Use
+
+- send `/start` first to claim the bot in that environment
+- use `/whoami` if you need to verify the stored owner and chat IDs
 
 ## Related Docs
 

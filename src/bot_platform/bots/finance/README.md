@@ -16,6 +16,7 @@ Private Telegram finance bot for Indonesian daily money tracking.
 
 - `/start`
 - `/help`
+- `/whoami`
 - `/status`
 - `/today`
 - `/week`
@@ -35,6 +36,11 @@ Private Telegram finance bot for Indonesian daily money tracking.
 - `makan siang 45000 kemarin pakai gopay`
 - voice note in Indonesian
 - receipt or payment screenshot
+
+## First Use
+
+- send `/start` first to claim the bot in that environment
+- use `/whoami` if you need to verify the stored owner and chat IDs
 
 ## Related Docs
 

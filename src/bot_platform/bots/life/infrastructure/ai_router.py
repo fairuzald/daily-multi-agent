@@ -23,7 +23,10 @@ class RotatingLifeAIClient:
         self._primary_blocked_until: datetime | None = None
 
     def parse_life_items(self, raw_input: str, *, reference_time_iso: str, timezone_name: str):
-        return self._run(lambda client: client.parse_life_items(raw_input, reference_time_iso=reference_time_iso, timezone_name=timezone_name))
+        return self._run(
+            lambda client: client.parse_life_items(raw_input, reference_time_iso=reference_time_iso, timezone_name=timezone_name),
+            capability_name="parse_life_items",
+        )
 
     def correct_life_items(
         self,
@@ -39,15 +42,19 @@ class RotatingLifeAIClient:
                 correction_input=correction_input,
                 reference_time_iso=reference_time_iso,
                 timezone_name=timezone_name,
-            )
+            ),
+            capability_name="correct_life_items",
         )
 
     def transcribe_voice_note(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-        return self._run(lambda client: client.transcribe_voice_note(audio_bytes=audio_bytes, mime_type=mime_type))
+        return self._run(
+            lambda client: client.transcribe_voice_note(audio_bytes=audio_bytes, mime_type=mime_type),
+            capability_name="transcribe_voice_note",
+        )
 
-    def _run(self, operation: Callable[[LifeAIClient], T]) -> T:
+    def _run(self, operation: Callable[[LifeAIClient], T], *, capability_name: str) -> T:
         if self._should_skip_primary():
-            return self._run_with_fallback(operation)
+            return self._run_with_fallback(operation, capability_name=capability_name)
         try:
             result = operation(self.primary)
         except Exception as exc:
@@ -55,12 +62,20 @@ class RotatingLifeAIClient:
             if exhaustion is None:
                 raise
             self._block_primary(retry_after_seconds=exhaustion.retry_after_seconds)
-            return self._run_with_fallback(operation, primary_exc=exc)
+            return self._run_with_fallback(operation, capability_name=capability_name, primary_exc=exc)
         self._primary_blocked_until = None
         return result
 
-    def _run_with_fallback(self, operation: Callable[[LifeAIClient], T], primary_exc: Exception | None = None) -> T:
+    def _run_with_fallback(
+        self,
+        operation: Callable[[LifeAIClient], T],
+        *,
+        capability_name: str,
+        primary_exc: Exception | None = None,
+    ) -> T:
         if self.fallback is None:
+            raise primary_exc or RuntimeError("AI service is temporarily exhausted. Please try again later.")
+        if not self._supports_capability(self.fallback, capability_name):
             raise primary_exc or RuntimeError("AI service is temporarily exhausted. Please try again later.")
         try:
             return operation(self.fallback)
@@ -73,6 +88,11 @@ class RotatingLifeAIClient:
                     ) from fallback_exc
                 raise RuntimeError("429 RESOURCE_EXHAUSTED. AI providers are temporarily exhausted. Please try again soon.") from fallback_exc
             raise fallback_exc
+
+    @staticmethod
+    def _supports_capability(client: LifeAIClient, capability_name: str) -> bool:
+        capability = getattr(client, capability_name, None)
+        return callable(capability)
 
     def _block_primary(self, retry_after_seconds: int | None) -> None:
         seconds = retry_after_seconds or self.cooldown_seconds

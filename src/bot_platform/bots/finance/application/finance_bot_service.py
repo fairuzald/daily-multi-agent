@@ -66,23 +66,23 @@ class FinanceBotService:
             self.command_service,
         )
 
-    def handle_start(self, user_id: int):
-        return self.setup_service.handle_start(user_id)
+    def handle_start(self, user_id: int, chat_id: int):
+        return self.setup_service.handle_start(user_id, chat_id)
 
-    def handle_help(self, user_id: int):
-        return self.setup_service.handle_help(user_id)
+    def handle_help(self, user_id: int, chat_id: int):
+        return self.setup_service.handle_help(user_id, chat_id)
 
-    def handle_full_help(self, user_id: int):
-        return self.setup_service.handle_full_help(user_id)
+    def handle_full_help(self, user_id: int, chat_id: int):
+        return self.setup_service.handle_full_help(user_id, chat_id)
 
-    def handle_status(self, user_id: int):
-        return self.setup_service.handle_status(user_id)
+    def handle_status(self, user_id: int, chat_id: int):
+        return self.setup_service.handle_status(user_id, chat_id)
 
-    def handle_whoami(self, user_id: int):
-        return self.setup_service.handle_whoami(user_id)
+    def handle_whoami(self, user_id: int, chat_id: int):
+        return self.setup_service.handle_whoami(user_id, chat_id)
 
-    def handle_set_sheet(self, user_id: int):
-        return self.setup_service.handle_set_sheet(user_id)
+    def handle_set_sheet(self, user_id: int, chat_id: int):
+        return self.setup_service.handle_set_sheet(user_id, chat_id)
 
     def handle_add_payment_method(self, user_id: int, chat_id: int):
         return self.setup_service.handle_add_payment_method(user_id, chat_id)

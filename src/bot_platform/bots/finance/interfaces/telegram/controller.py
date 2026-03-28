@@ -50,22 +50,46 @@ class TelegramBotController:
             self.bot_service.state_store.set_reply_context(update.effective_chat.id, sent_message.message_id, reply_context)
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.send_bot_response(update, self.bot_service.handle_start(update.effective_user.id), context)
+        await self.send_bot_response(
+            update,
+            self.bot_service.handle_start(update.effective_user.id, update.effective_chat.id),
+            context,
+        )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.send_bot_response(update, self.bot_service.handle_help(update.effective_user.id), context)
+        await self.send_bot_response(
+            update,
+            self.bot_service.handle_help(update.effective_user.id, update.effective_chat.id),
+            context,
+        )
 
     async def full_help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.send_bot_response(update, self.bot_service.handle_full_help(update.effective_user.id), context)
+        await self.send_bot_response(
+            update,
+            self.bot_service.handle_full_help(update.effective_user.id, update.effective_chat.id),
+            context,
+        )
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.send_bot_response(update, self.bot_service.handle_status(update.effective_user.id), context)
+        await self.send_bot_response(
+            update,
+            self.bot_service.handle_status(update.effective_user.id, update.effective_chat.id),
+            context,
+        )
 
     async def whoami_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.send_bot_response(update, self.bot_service.handle_whoami(update.effective_user.id), context)
+        await self.send_bot_response(
+            update,
+            self.bot_service.handle_whoami(update.effective_user.id, update.effective_chat.id),
+            context,
+        )
 
     async def set_sheet_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await self.send_bot_response(update, self.bot_service.handle_set_sheet(update.effective_user.id), context)
+        await self.send_bot_response(
+            update,
+            self.bot_service.handle_set_sheet(update.effective_user.id, update.effective_chat.id),
+            context,
+        )
 
     async def add_payment_method_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self.send_bot_response(
