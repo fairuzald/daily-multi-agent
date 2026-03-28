@@ -76,14 +76,23 @@ class FinanceBotPolicy:
 
     @staticmethod
     def format_group_saved_message(transactions: list[TransactionRecord], *, forced_even_split: bool = False) -> BotResponse:
-        total_amount = sum(item.amount for item in transactions)
+        if forced_even_split and transactions and transactions[0].group_total_amount:
+            total_amount = transactions[0].group_total_amount or 0
+        else:
+            total_amount = sum(item.amount for item in transactions)
         total_label = f"Rp{total_amount:,}".replace(",", ".")
-        lines = [f"Saved {len(transactions)} transactions in one group. Total {total_label}."]
+        if forced_even_split and transactions and transactions[0].group_total_amount:
+            lines = [f"Saved {len(transactions)} transactions in one group. Shared total {total_label}."]
+        else:
+            lines = [f"Saved {len(transactions)} transactions in one group. Total {total_label}."]
         for item in transactions:
-            amount = f"Rp{item.amount:,}".replace(",", ".")
-            lines.append(f"- {item.subcategory or item.description or item.category}: {amount}")
+            if forced_even_split and item.group_total_amount:
+                lines.append(f"- {item.subcategory or item.description or item.category}")
+            else:
+                amount = f"Rp{item.amount:,}".replace(",", ".")
+                lines.append(f"- {item.subcategory or item.description or item.category}: {amount}")
         if forced_even_split:
-            lines.append("Amount allocation used an even split because the original total was ambiguous.")
+            lines.append("Shared fields were kept the same because the original total was ambiguous.")
         return BotResponse(
             "\n".join(lines),
             reply_context=ReplyMessageContext(kind="saved", transaction_id=transactions[-1].transaction_id),

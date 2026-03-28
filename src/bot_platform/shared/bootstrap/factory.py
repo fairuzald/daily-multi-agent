@@ -74,6 +74,8 @@ def create_telegram_application(settings: Settings) -> Application:
     app.bot_data["telegram_controller"] = controller
     app.add_handler(CommandHandler("start", controller.start_command))
     app.add_handler(CommandHandler("help", controller.help_command))
+    app.add_handler(CommandHandler("full_help", controller.full_help_command))
+    app.add_handler(CommandHandler("fullhelp", controller.full_help_command))
     app.add_handler(CommandHandler("status", controller.status_command))
     app.add_handler(CommandHandler("whoami", controller.whoami_command))
     app.add_handler(CommandHandler("set_sheet", controller.set_sheet_command))

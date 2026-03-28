@@ -181,35 +181,38 @@ class GoogleSheetsClient:
         metadata = spreadsheet.fetch_sheet_metadata()
         sheet_meta = next(sheet for sheet in metadata["sheets"] if sheet["properties"]["title"] == "Transactions")
         sheet_id = sheet_meta["properties"]["sheetId"]
-        requests = [
-            {
-                "unmergeCells": {
-                    "range": {
-                        "sheetId": sheet_id,
-                        "startRowIndex": 1,
-                        "endRowIndex": max(len(values), 2),
-                        "startColumnIndex": 1,
-                        "endColumnIndex": 16,
-                    }
-                }
-            }
-        ]
+        existing_merges = list(sheet_meta.get("merges", []))
+        requests: list[dict[str, object]] = []
 
         date_values = [row[1] if len(row) > 1 else "" for row in values]
-        requests.extend(self._build_merge_requests(sheet_id=sheet_id, values=date_values, start_column_index=1, end_column_index=2))
+        requests.extend(
+            self._filter_new_merge_requests(
+                self._build_merge_requests(
+                    sheet_id=sheet_id,
+                    values=date_values,
+                    start_column_index=1,
+                    end_column_index=2,
+                ),
+                existing_merges=existing_merges,
+            )
+        )
 
         group_values = [row[14] if len(row) > 14 else "" for row in values]
         for column_index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15):
             requests.extend(
-                self._build_group_merge_requests(
-                    sheet_id=sheet_id,
-                    rows=values,
-                    group_values=group_values,
-                    column_index=column_index,
+                self._filter_new_merge_requests(
+                    self._build_group_merge_requests(
+                        sheet_id=sheet_id,
+                        rows=values,
+                        group_values=group_values,
+                        column_index=column_index,
+                    ),
+                    existing_merges=existing_merges,
                 )
             )
 
-        spreadsheet.batch_update({"requests": requests})
+        if requests:
+            spreadsheet.batch_update({"requests": requests})
 
     @staticmethod
     def _build_merge_requests(
@@ -326,6 +329,33 @@ class GoogleSheetsClient:
                 }
             )
         return requests
+
+    @staticmethod
+    def _filter_new_merge_requests(
+        requests: list[dict[str, object]],
+        *,
+        existing_merges: list[dict[str, int]],
+    ) -> list[dict[str, object]]:
+        filtered: list[dict[str, object]] = []
+        seen_ranges = [dict(item) for item in existing_merges]
+        for request in requests:
+            merge_request = request.get("mergeCells", {})
+            merge_range = merge_request.get("range", {})
+            if not merge_range:
+                continue
+            if any(GoogleSheetsClient._ranges_overlap(merge_range, existing) for existing in seen_ranges):
+                continue
+            filtered.append(request)
+            seen_ranges.append(dict(merge_range))
+        return filtered
+
+    @staticmethod
+    def _ranges_overlap(left: dict[str, int], right: dict[str, int]) -> bool:
+        if left.get("sheetId") != right.get("sheetId"):
+            return False
+        row_overlap = left["startRowIndex"] < right["endRowIndex"] and right["startRowIndex"] < left["endRowIndex"]
+        column_overlap = left["startColumnIndex"] < right["endColumnIndex"] and right["startColumnIndex"] < left["endColumnIndex"]
+        return row_overlap and column_overlap
 
     def _credentials_config(self) -> dict[str, str]:
         if not self.service_account_json.strip():

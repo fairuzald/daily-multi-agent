@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 
 from bot_platform.bots.finance.categories import DEFAULT_CATEGORIES, DEFAULT_WALLETS
@@ -76,35 +77,81 @@ class FinanceBotService:
             return BotResponse(self._unauthorized_message())
         return BotResponse(
             "What I can do:\n"
-            "- Record expense, income, and transfer from natural chat\n"
-            "- Read voice notes in Indonesian\n"
-            "- Extract a transaction from receipt or payment screenshots\n"
-            "- Show daily, weekly, and monthly summaries\n"
-            "- Help review, edit, or delete recent transactions\n"
-            "- Track budgets and compare this month vs last month\n\n"
+            "- Record expense, income, and transfer from chat, voice, or screenshots\n"
+            "- Split one message into multiple transactions when you mention multiple items\n"
+            "- Ask follow-up questions if one total is shared across several items\n"
+            "- Read Indonesian voice notes and payment or order screenshots\n"
+            "- Show today, week, month, category, budget, and month-to-month summaries\n"
+            "- Help fix, edit, or delete recent transactions by reply or command\n\n"
             "Try messages like:\n"
             "- beli kopi 25000 pakai bca\n"
             "- makan siang 45000 kemarin pakai gopay\n"
             "- gaji masuk 8000000 ke bri\n"
             "- transfer 500000 dari BCA ke GoPay\n"
+            "- es teh 5000 dan roti bakar 12000 pakai gopay\n"
+            "- nasi goreng dan es teh total 30000 pakai ovo\n"
             "- show food this week\n"
             "- show budget this month\n"
             "- compare month\n"
             "- delete last\n"
             "- edit last 25000 pakai gopay\n\n"
-            "Commands:\n"
+            "Quick commands:\n"
             "/start\n"
             "/help\n"
-            "/status\n"
+            "/fullhelp\n"
             "/set_sheet\n"
             "/today\n"
             "/week\n"
             "/month\n"
-            "/whoami\n\n"
+            "/budget_show\n"
+            "/compare_month\n\n"
+            "Use /fullhelp for the full command list.\n\n"
+            f"For sheet setup, share your sheet with this service account as Editor:\n`{self.service_account_email}`"
+        )
+
+    def handle_full_help(self, user_id: int) -> BotResponse:
+        if not self._is_authorized(user_id):
+            return BotResponse(self._unauthorized_message())
+        return BotResponse(
+            "Full help:\n\n"
+            "Natural input examples:\n"
+            "- beli kopi 25000 pakai bca\n"
+            "- makan siang 45000 kemarin pakai gopay\n"
+            "- gaji masuk 8000000 ke bri\n"
+            "- transfer 500000 dari BCA ke GoPay\n"
+            "- es teh 5000 dan roti bakar 12000 pakai gopay\n"
+            "- nasi goreng dan es teh total 30000 pakai ovo\n"
+            "- show food this week\n"
+            "- show budget this month\n"
+            "- compare month\n\n"
+            "Core commands:\n"
+            "/start\n"
+            "/help\n"
+            "/fullhelp\n"
+            "/full_help\n"
+            "/status\n"
+            "/whoami\n"
+            "/set_sheet\n\n"
+            "Summary commands:\n"
+            "/today [YYYY-MM-DD]\n"
+            "/week [YYYY-Www]\n"
+            "/month [YYYY-MM]\n"
+            "/read <category> <today|week|month>\n"
+            "/compare_month\n\n"
+            "Edit and delete commands:\n"
+            "/delete_last\n"
+            "/delete_reply\n"
+            "/edit_last <amount> [payment_method]\n"
+            "/edit_reply <amount> [payment_method]\n\n"
+            "Budget commands:\n"
+            "/budget_set <weekly|monthly> <global|category> <amount> [category]\n"
+            "/budget_show <weekly|monthly>\n\n"
             "Setup commands:\n"
             "/add_payment_method\n"
             "/add_categories\n\n"
-            f"For sheet setup, share your sheet with this service account as Editor:\n{self.service_account_email}"
+            "Sheet setup:\n"
+            "Share your Google Sheet with this service account as Editor, then send the full sheet link.\n"
+            f"`{self.service_account_email}`"
         )
 
     def handle_status(self, user_id: int) -> BotResponse:
@@ -173,7 +220,11 @@ class FinanceBotService:
 
         matched_reply_context = self._matched_reply_context(chat_id, reply_context)
         pending = self.state_store.get_pending(chat_id)
-        if pending is not None and matched_reply_context and matched_reply_context.kind == "confirmation":
+        if self._is_pending_confirmation_reply(
+            pending=pending,
+            reply_context=reply_context,
+            matched_reply_context=matched_reply_context,
+        ):
             return self._handle_pending_confirmation(chat_id, message_text, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse(
@@ -209,7 +260,11 @@ class FinanceBotService:
             return BotResponse("No Google Sheet is configured yet. Use /start or /set_sheet and send the sheet link first.")
         matched_reply_context = self._matched_reply_context(chat_id, reply_context)
         pending = self.state_store.get_pending(chat_id)
-        if pending is not None and matched_reply_context and matched_reply_context.kind == "confirmation":
+        if self._is_pending_confirmation_reply(
+            pending=pending,
+            reply_context=reply_context,
+            matched_reply_context=matched_reply_context,
+        ):
             return self._handle_pending_confirmation(chat_id, transcript, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse(
@@ -238,7 +293,11 @@ class FinanceBotService:
             return BotResponse("No Google Sheet is configured yet. Use /start or /set_sheet and send the sheet link first.")
         matched_reply_context = self._matched_reply_context(chat_id, reply_context)
         pending = self.state_store.get_pending(chat_id)
-        if pending is not None and matched_reply_context and matched_reply_context.kind == "confirmation":
+        if self._is_pending_confirmation_reply(
+            pending=pending,
+            reply_context=reply_context,
+            matched_reply_context=matched_reply_context,
+        ):
             return self._handle_pending_confirmation(chat_id, parsed.raw_input, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse(
@@ -519,6 +578,7 @@ class FinanceBotService:
             return self._save_group_transactions(
                 chat_id=chat_id,
                 item_inputs=pending.item_inputs,
+                item_labels=pending.item_labels,
                 raw_input=pending.raw_input,
                 input_mode=pending.input_mode,
                 message_datetime=None,
@@ -550,6 +610,7 @@ class FinanceBotService:
         return self._save_group_transactions(
             chat_id=chat_id,
             item_inputs=pending.item_inputs,
+            item_labels=pending.item_labels,
             raw_input=pending.raw_input,
             input_mode=pending.input_mode,
             message_datetime=None,
@@ -703,6 +764,7 @@ class FinanceBotService:
         return self._save_group_transactions(
             chat_id=chat_id,
             item_inputs=candidate.item_inputs,
+            item_labels=candidate.item_labels,
             raw_input=candidate.raw_input,
             input_mode=input_mode,
             message_datetime=message_datetime,
@@ -716,6 +778,7 @@ class FinanceBotService:
         *,
         chat_id: int,
         item_inputs: list[str],
+        item_labels: list[str],
         raw_input: str,
         input_mode: InputMode,
         message_datetime: datetime | None,
@@ -723,6 +786,17 @@ class FinanceBotService:
         shared_total_amount: int | None,
         forced_even_split: bool,
     ) -> BotResponse:
+        if forced_even_split and allocations is not None:
+            return self._save_forced_group_transactions(
+                chat_id=chat_id,
+                item_labels=item_labels,
+                raw_input=raw_input,
+                input_mode=input_mode,
+                message_datetime=message_datetime,
+                allocations=allocations,
+                shared_total_amount=shared_total_amount,
+            )
+
         transactions: list[TransactionRecord] = []
         group_id = f"group_{chat_id}_{abs(hash((raw_input, tuple(item_inputs))))}"
         for index, item_input in enumerate(item_inputs):
@@ -753,6 +827,74 @@ class FinanceBotService:
             self.state_store.set_transaction_snapshot(transaction)
             self._learn_mapping_from_transaction(transaction)
         return FinanceBotPolicy.format_group_saved_message(transactions, forced_even_split=forced_even_split)
+
+    def _save_forced_group_transactions(
+        self,
+        *,
+        chat_id: int,
+        item_labels: list[str],
+        raw_input: str,
+        input_mode: InputMode,
+        message_datetime: datetime | None,
+        allocations: list[int],
+        shared_total_amount: int | None,
+    ) -> BotResponse:
+        base_parsed = self.ai_client.parse_transaction(raw_input)
+        base_parsed = self._apply_deterministic_enrichment(base_parsed, raw_input, message_datetime)
+        base_parsed = FinanceBotPolicy.prepare_for_save(base_parsed)
+
+        if base_parsed.type is None:
+            base_parsed = base_parsed.model_copy(update={"type": TransactionType.EXPENSE})
+
+        fallback_payment_method = self._extract_shared_payment_method(raw_input)
+        shared_payment_method = base_parsed.payment_method or base_parsed.account_from or fallback_payment_method
+        base_parsed = base_parsed.model_copy(
+            update={
+                "payment_method": shared_payment_method,
+                "account_from": shared_payment_method,
+            }
+        )
+        base_parsed = FinanceBotPolicy.prepare_for_save(base_parsed)
+
+        group_id = f"group_{chat_id}_{abs(hash((raw_input, tuple(item_labels), tuple(allocations))))}"
+
+        transactions: list[TransactionRecord] = []
+        for label, amount in zip(item_labels, allocations, strict=True):
+            item_name = label.strip() or "Item"
+            parsed = base_parsed.model_copy(
+                update={
+                    "amount": shared_total_amount or amount,
+                    "raw_input": raw_input,
+                    "subcategory": item_name,
+                    "merchant_or_source": base_parsed.merchant_or_source or item_name,
+                    "description": base_parsed.description or item_name,
+                    "payment_method": shared_payment_method,
+                    "account_from": shared_payment_method,
+                    "missing_fields": [],
+                    "needs_confirmation": False,
+                    "confidence": max(base_parsed.confidence, 1.0),
+                }
+            )
+            parsed = FinanceBotPolicy.prepare_for_save(parsed)
+            transaction = parsed.to_transaction_record(input_mode=input_mode).model_copy(
+                update={
+                    "group_id": group_id,
+                    "group_total_amount": shared_total_amount,
+                    "amount": shared_total_amount or amount,
+                    "subcategory": item_name,
+                    "merchant_or_source": item_name,
+                    "description": parsed.description or item_name,
+                }
+            )
+            transactions.append(transaction)
+
+        self._sheets_client().append_transactions(transactions)
+        self.state_store.clear_pending(chat_id)
+        self.state_store.set_last_transaction_id(chat_id, transactions[-1].transaction_id)
+        for transaction in transactions:
+            self.state_store.set_transaction_snapshot(transaction)
+            self._learn_mapping_from_transaction(transaction)
+        return FinanceBotPolicy.format_group_saved_message(transactions, forced_even_split=True)
 
     def _handle_command(
         self,
@@ -917,6 +1059,14 @@ class FinanceBotService:
                 return mapping.category
         return ""
 
+    @staticmethod
+    def _extract_shared_payment_method(raw_text: str) -> str:
+        match = re.search(r"\b(?:pakai|via|dengan|gunakan)\s+([a-zA-Z0-9][a-zA-Z0-9\s-]*)$", raw_text, flags=re.IGNORECASE)
+        if not match:
+            return ""
+        return match.group(1).strip()
+
+
     def _apply_deterministic_enrichment(
         self,
         parsed: ParsedTransaction,
@@ -1006,6 +1156,19 @@ class FinanceBotService:
         if reply_context is None or not reply_context.is_bot_reply:
             return None
         return self.state_store.get_reply_context(chat_id, reply_context.message_id)
+
+    @staticmethod
+    def _is_pending_confirmation_reply(
+        *,
+        pending: PendingTransactionState | None,
+        reply_context: ReplyContextInput | None,
+        matched_reply_context: ReplyMessageContext | None,
+    ) -> bool:
+        if pending is None or reply_context is None or not reply_context.is_bot_reply:
+            return False
+        if matched_reply_context is None:
+            return True
+        return matched_reply_context.kind == "confirmation"
 
     def _handle_setup_mode(self, chat_id: int, message_text: str, setup_mode: str) -> BotResponse:
         if setup_mode == "add_payment_method":

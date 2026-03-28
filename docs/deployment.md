@@ -42,6 +42,8 @@ Key variables:
 - `PRIMARY_AI_PROVIDER`
 - `GEMINI_API_KEY` and/or `OPENROUTER_API_KEY`
 
+Before production deployment, complete the Google Cloud service account and Google Sheets setup described in [setup.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup.md#google-cloud-and-google-sheets-setup).
+
 ## Database
 
 `DATABASE_URL` must point to a hosted or otherwise externally reachable Postgres instance.

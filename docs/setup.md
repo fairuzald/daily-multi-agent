@@ -133,6 +133,90 @@ Supported keys there:
 - `POSTGRES_PASSWORD`
 - `POSTGRES_PORT`
 
+## Google Cloud And Google Sheets Setup
+
+This bot accesses Google Sheets through a Google Cloud service account. Your own Google account access is not enough for the bot to read or write the sheet. The sheet must also be shared with the service account email.
+
+### 1. Create Or Select A Google Cloud Project
+
+1. Open the Google Cloud Console.
+2. Create a new project, or select an existing project you want to use for the bot.
+3. Make sure billing and organization restrictions, if any, allow API usage and service account keys.
+
+### 2. Enable The Google Sheets API
+
+1. In Google Cloud Console, go to `APIs & Services` -> `Library`.
+2. Search for `Google Sheets API`.
+3. Open it and click `Enable`.
+
+You do not need a separate end-user OAuth flow for this bot because it uses a service account.
+
+### 3. Create The Service Account
+
+1. Go to `IAM & Admin` -> `Service Accounts`.
+2. Click `Create Service Account`.
+3. Give it a name such as `personal-finance`.
+4. Finish the creation flow. It does not need broad IAM roles just to access Sheets by sharing.
+
+After creation, Google Cloud will show an email like:
+
+```text
+personal-finance@your-project-id.iam.gserviceaccount.com
+```
+
+That email is what you must share the spreadsheet with later.
+
+### 4. Create A JSON Key
+
+1. Open the service account you just created.
+2. Go to the `Keys` tab.
+3. Click `Add Key` -> `Create new key`.
+4. Choose `JSON`.
+5. Download the JSON file.
+
+Treat this file as a secret. Do not commit it to the repository.
+
+### 5. Put The JSON Into `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+The app expects the full service account JSON in one environment variable:
+
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+Recommended approach:
+
+1. Open the downloaded JSON file.
+2. Copy the full JSON object.
+3. Put it into `.env` or `.env.dev` as one line:
+
+```env
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account","project_id":"your-project",...}
+```
+
+If your deployment platform supports multiline secrets, you can still store the same JSON payload there, but the final runtime value must be the raw JSON string.
+
+### 6. Create Or Choose The Spreadsheet
+
+1. Create a Google Sheet, or choose an existing one.
+2. The bot will use these tabs:
+   - `Transactions`
+   - `Categories`
+   - `Summary`
+3. The bot can create missing tabs and repair headers when the sheet is first connected.
+
+### 7. Share The Sheet With The Service Account
+
+1. Open the Google Sheet.
+2. Click `Share`.
+3. Add the service account email from step 3.
+4. Give it `Editor` access.
+5. Save the sharing settings.
+
+Important:
+
+- your own owner/editor access does not automatically grant the bot access
+- the service account itself must appear in the sharing list
+- if the bot says it cannot access the sheet, the most common cause is that this sharing step was skipped
+
 ## Google Sheet Setup
 
 The bot expects these tabs:

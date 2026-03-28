@@ -38,9 +38,10 @@ class SummaryService:
     ) -> MonthlySummary:
         budgets = budgets or []
 
-        income = [item for item in transactions if item.type in {TransactionType.INCOME, TransactionType.INVESTMENT_IN}]
-        expenses = [item for item in transactions if item.type in {TransactionType.EXPENSE, TransactionType.INVESTMENT_OUT}]
-        transfers = [item for item in transactions if item.type == TransactionType.TRANSFER]
+        counted_transactions = self._counted_transactions(transactions)
+        income = [item for item in counted_transactions if item.type in {TransactionType.INCOME, TransactionType.INVESTMENT_IN}]
+        expenses = [item for item in counted_transactions if item.type in {TransactionType.EXPENSE, TransactionType.INVESTMENT_OUT}]
+        transfers = [item for item in counted_transactions if item.type == TransactionType.TRANSFER]
 
         total_income = sum(item.amount for item in income)
         total_expense = sum(item.amount for item in expenses)
@@ -91,7 +92,7 @@ class SummaryService:
             )
 
         account_balances = self._build_account_balances(expenses, income, transfers)
-        insights = self._build_insights(period_label, overview, expense_categories, transactions)
+        insights = self._build_insights(period_label, overview, expense_categories, counted_transactions)
 
         return MonthlySummary(
             overview=overview,
@@ -154,6 +155,22 @@ class SummaryService:
             key = item.merchant_or_source or item.category or "Other"
             totals[key] += item.amount
         return dict(totals)
+
+    def _counted_transactions(self, transactions: list[TransactionRecord]) -> list[TransactionRecord]:
+        counted: list[TransactionRecord] = []
+        seen_group_totals: set[str] = set()
+        for item in transactions:
+            if item.status == TransactionStatus.DELETED:
+                continue
+            if item.group_id and item.group_total_amount:
+                if item.group_id in seen_group_totals:
+                    counted.append(item.model_copy(update={"amount": 0}))
+                    continue
+                seen_group_totals.add(item.group_id)
+                counted.append(item.model_copy(update={"amount": item.group_total_amount}))
+                continue
+            counted.append(item)
+        return counted
 
     def _build_account_balances(
         self,

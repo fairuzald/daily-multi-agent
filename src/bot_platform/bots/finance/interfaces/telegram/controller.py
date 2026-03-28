@@ -5,6 +5,7 @@ import re
 
 import httpx
 from telegram import PhotoSize, Update
+from telegram.error import TimedOut
 from telegram.ext import ContextTypes
 
 from bot_platform.bots.finance.application.finance_bot_service import FinanceBotService
@@ -76,7 +77,11 @@ class TelegramBotController:
     ) -> None:
         if not update.message:
             return
-        sent_message = await update.message.reply_text(str(response))
+        try:
+            sent_message = await update.message.reply_text(str(response))
+        except TimedOut:
+            logger.warning("Timed out sending Telegram response, retrying once")
+            sent_message = await update.message.reply_text(str(response))
         reply_context = getattr(response, "reply_context", None)
         if reply_context is not None:
             self.bot_service.state_store.set_reply_context(update.effective_chat.id, sent_message.message_id, reply_context)
@@ -86,6 +91,9 @@ class TelegramBotController:
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self.send_bot_response(update, self.bot_service.handle_help(update.effective_user.id), context)
+
+    async def full_help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self.send_bot_response(update, self.bot_service.handle_full_help(update.effective_user.id), context)
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self.send_bot_response(update, self.bot_service.handle_status(update.effective_user.id), context)
