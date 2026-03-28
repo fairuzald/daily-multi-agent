@@ -46,6 +46,9 @@ class LifeTelegramController:
     async def today_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self._reply(update, self.bot_service.handle_today(update.effective_user.id))
 
+    async def tomorrow_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self._reply(update, self.bot_service.handle_upcoming(update.effective_user.id, days=1))
+
     async def upcoming_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         days = int(context.args[0]) if context.args and context.args[0].isdigit() else 7
         await self._reply(update, self.bot_service.handle_upcoming(update.effective_user.id, days=days))
@@ -64,26 +67,32 @@ class LifeTelegramController:
         if reply_context is not None:
             await self._reply(update, self.bot_service.handle_done(update.effective_user.id, reply_context.item_id))
             return
+        if len(context.args) == 0:
+            await self._reply(update, self.bot_service.handle_done_latest(update.effective_user.id))
+            return
         if len(context.args) != 1:
-            await self._reply(update, "Usage: reply to an item and send /done")
+            await self._reply(update, "Use /done to mark the latest active item, or reply to a saved item and send /done.")
             return
         await self._reply(update, self.bot_service.handle_done(update.effective_user.id, context.args[0]))
 
     async def snooze_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_context = self._reply_context(update)
         if len(context.args) != 2:
-            if reply_context is not None and len(context.args) == 1:
+            if len(context.args) == 1:
                 amount_text = "".join(ch for ch in context.args[0] if ch.isdigit())
                 unit = "days" if "day" in context.args[0].lower() else "hours"
                 if amount_text:
-                    await self._reply(update, self.bot_service.handle_snooze(update.effective_user.id, reply_context.item_id, int(amount_text), unit))
+                    if reply_context is not None:
+                        await self._reply(update, self.bot_service.handle_snooze(update.effective_user.id, reply_context.item_id, int(amount_text), unit))
+                        return
+                    await self._reply(update, self.bot_service.handle_snooze_latest(update.effective_user.id, int(amount_text), unit))
                     return
-            await self._reply(update, "Usage: reply to an item and send /snooze 2hours")
+            await self._reply(update, "Use /snooze 2hours for the latest active item, or reply to a saved item with /snooze 2hours.")
             return
         amount_text = "".join(ch for ch in context.args[1] if ch.isdigit())
         unit = "days" if "day" in context.args[1].lower() else "hours"
         if not amount_text:
-            await self._reply(update, "Usage: reply to an item and send /snooze 2hours")
+            await self._reply(update, "Use /snooze 2hours for the latest active item, or reply to a saved item with /snooze 2hours.")
             return
         target = reply_context.item_id if reply_context is not None else context.args[0]
         await self._reply(update, self.bot_service.handle_snooze(update.effective_user.id, target, int(amount_text), unit))
@@ -93,8 +102,11 @@ class LifeTelegramController:
         if reply_context is not None:
             await self._reply(update, self.bot_service.handle_cancel(update.effective_user.id, reply_context.item_id))
             return
+        if len(context.args) == 0:
+            await self._reply(update, self.bot_service.handle_cancel_latest(update.effective_user.id))
+            return
         if len(context.args) != 1:
-            await self._reply(update, "Usage: reply to an item and send /cancel")
+            await self._reply(update, "Use /cancel for the latest active item, or reply to a saved item and send /cancel.")
             return
         await self._reply(update, self.bot_service.handle_cancel(update.effective_user.id, context.args[0]))
 

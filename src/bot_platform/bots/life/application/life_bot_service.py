@@ -49,15 +49,16 @@ class LifeBotService:
             "- you can also send a voice note with the same kinds of reminders\n\n"
             "What each view shows:\n"
             "- /today = items scheduled for today\n"
-            "- /upcoming = items coming in the next 7 days\n"
+            "- /tomorrow = items scheduled for tomorrow\n"
+            "- /upcoming = items coming in the next 7 days, including tomorrow\n"
             "- /overdue = items already past due\n"
             "- /followups = only follow_up items\n"
-            "- /dates = only important_date items\n\n"
+            "- /dates = only important_date items like birthdays, renewals, and deadlines\n\n"
             "Actions:\n"
-            "- reply to a saved item with /done\n"
-            "- reply to a saved item with /cancel or /delete\n"
-            "- reply to a saved item with /snooze 2hours\n"
-            "- plain text replies also work: done, cancel, delete, snooze 2hours\n"
+            "- /done = mark the latest active item as done, or reply to a saved item\n"
+            "- /cancel or /delete = cancel the latest active item, or reply to a saved item\n"
+            "- /snooze 2hours = snooze the latest active item, or reply to a saved item\n"
+            "- plain text also works naturally: done, cancel this, delete that, snooze this 2hours\n"
             "- if parsing fails, reply to the bot's rewrite prompt with a clearer sentence\n\n"
             "Reminder delivery:\n"
             "- Telegram reminders are checked every 5 minutes by the reminder tick\n"
@@ -103,6 +104,10 @@ class LifeBotService:
             if pending is None:
                 return LifeBotResponse("That pending rewrite expired. Please send the reminder again.")
             return self._handle_pending_rewrite(chat_id, pending, text, message_datetime=message_datetime)
+
+        action_response = self._handle_inline_action(user_id, text)
+        if action_response is not None:
+            return action_response
 
         batch = self._parse_items(text, message_datetime=message_datetime)
         if batch.needs_manual_review or not batch.items:
@@ -167,6 +172,13 @@ class LifeBotService:
         items = [item for item in self._active_items() if item.type == LifeItemType.IMPORTANT_DATE]
         return self._render_items("Important dates", items)
 
+    def handle_done_latest(self, user_id: int) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._latest_active_item()
+        if item is None:
+            return LifeBotResponse("I couldn't find an active item to mark done. Save one first or reply to a saved item.")
+        return self.handle_done(user_id, item.item_id)
+
     def handle_done(self, user_id: int, item_id_fragment: str) -> LifeBotResponse:
         self._ensure_owner(user_id)
         item = self._find_item(item_id_fragment)
@@ -214,6 +226,13 @@ class LifeBotService:
             message = f"{message}\n{warning}"
         return LifeBotResponse(message)
 
+    def handle_snooze_latest(self, user_id: int, amount: int, unit: str) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._latest_active_item()
+        if item is None:
+            return LifeBotResponse("I couldn't find an active item to snooze. Save one first or reply to a saved item.")
+        return self.handle_snooze(user_id, item.item_id, amount, unit)
+
     def handle_cancel(self, user_id: int, item_id_fragment: str) -> LifeBotResponse:
         self._ensure_owner(user_id)
         item = self._find_item(item_id_fragment)
@@ -224,8 +243,18 @@ class LifeBotService:
         self.repository.save(item)
         return LifeBotResponse("Cancelled.")
 
+    def handle_cancel_latest(self, user_id: int) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._latest_active_item()
+        if item is None:
+            return LifeBotResponse("I couldn't find an active item to cancel. Save one first or reply to a saved item.")
+        return self.handle_cancel(user_id, item.item_id)
+
     def handle_delete(self, user_id: int, item_id_fragment: str) -> LifeBotResponse:
         return self.handle_cancel(user_id, item_id_fragment)
+
+    def handle_delete_latest(self, user_id: int) -> LifeBotResponse:
+        return self.handle_cancel_latest(user_id)
 
     def item_reply_context(self, item: LifeItem) -> LifeReplyContext:
         return LifeReplyContext(kind="item", item_id=item.item_id)
@@ -372,6 +401,12 @@ class LifeBotService:
     def _active_items(self) -> list[LifeItem]:
         return [item for item in self.repository.list_all() if item.status in {LifeItemStatus.OPEN, LifeItemStatus.SNOOZED}]
 
+    def _latest_active_item(self) -> LifeItem | None:
+        items = self._active_items()
+        if not items:
+            return None
+        return max(items, key=lambda item: item.updated_at or item.created_at)
+
     def _sync_calendar(self, item: LifeItem) -> tuple[LifeItem, str]:
         if item.due_at is None:
             return item, ""
@@ -442,20 +477,38 @@ class LifeBotService:
             f"- Scheduled: {self._format_when(item.scheduled_at() or self._now(), all_day=item.all_day)}"
         )
 
-    def _handle_inline_action(self, user_id: int, text: str, *, reply_item_id: str) -> LifeBotResponse | None:
+    def _handle_inline_action(self, user_id: int, text: str, *, reply_item_id: str = "") -> LifeBotResponse | None:
         normalized = " ".join(text.strip().lower().split())
-        if not reply_item_id:
-            return None
-        if normalized in {"done", "/done", "mark done"}:
-            return self.handle_done(user_id, reply_item_id)
-        if normalized in {"cancel", "/cancel", "delete", "/delete"}:
-            return self.handle_cancel(user_id, reply_item_id)
+        if normalized in {"done", "/done", "mark done", "done this", "mark this done", "finish this"}:
+            target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
+            if not target_item:
+                return LifeBotResponse("I couldn't find an active item to mark done. Save one first or reply to a saved item.")
+            return self.handle_done(user_id, target_item)
+        if normalized in {
+            "cancel",
+            "/cancel",
+            "cancel this",
+            "cancel that",
+            "cancel it",
+            "delete",
+            "/delete",
+            "delete this",
+            "delete that",
+            "delete it",
+        }:
+            target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
+            if not target_item:
+                return LifeBotResponse("I couldn't find an active item to cancel. Save one first or reply to a saved item.")
+            return self.handle_cancel(user_id, target_item)
         if normalized.startswith("snooze ") or normalized.startswith("/snooze "):
             amount_text = "".join(ch for ch in normalized if ch.isdigit())
             if not amount_text:
-                return LifeBotResponse("Reply to an item and send `snooze 2hours` or `snooze 2days`.")
+                return LifeBotResponse("Send `snooze 2hours` or `snooze 2days`, or reply to a saved item with that message.")
             unit = "days" if "day" in normalized else "hours"
-            return self.handle_snooze(user_id, reply_item_id, int(amount_text), unit)
+            target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
+            if not target_item:
+                return LifeBotResponse("I couldn't find an active item to snooze. Save one first or reply to a saved item.")
+            return self.handle_snooze(user_id, target_item, int(amount_text), unit)
         return None
 
     def _normalize_datetime(self, value: datetime | None) -> datetime | None:

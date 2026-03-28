@@ -97,10 +97,8 @@ This repo includes a GitHub Actions workflow for that:
 
 Secrets expected by the workflow:
 
-- `LIFE_TICK_URL_DEV`
-- `LIFE_REMINDER_TICK_TOKEN_DEV`
-- `LIFE_TICK_URL_MAIN`
-- `LIFE_REMINDER_TICK_TOKEN_MAIN`
+- `LIFE_TICK_URL`
+- `LIFE_REMINDER_TICK_TOKEN`
 
 The workflow runs every 5 minutes.
 

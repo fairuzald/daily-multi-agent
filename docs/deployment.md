@@ -85,10 +85,8 @@ Workflow:
 
 Secrets:
 
-- `LIFE_TICK_URL_DEV`
-- `LIFE_REMINDER_TICK_TOKEN_DEV`
-- `LIFE_TICK_URL_MAIN`
-- `LIFE_REMINDER_TICK_TOKEN_MAIN`
+- `LIFE_TICK_URL`
+- `LIFE_REMINDER_TICK_TOKEN`
 
 If you do not run that scheduler:
 

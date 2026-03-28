@@ -1,10 +1,8 @@
 name: Life Reminder Tick
 
 # Required GitHub Actions secrets:
-# LIFE_TICK_URL_DEV=https://your-dev-domain.example.com/api/life_reminder_tick
-# LIFE_REMINDER_TICK_TOKEN_DEV=your-dev-life-reminder-tick-token
-# LIFE_TICK_URL_MAIN=https://your-main-domain.example.com/api/life_reminder_tick
-# LIFE_REMINDER_TICK_TOKEN_MAIN=your-main-life-reminder-tick-token
+# LIFE_TICK_URL=https://your-domain.example.com/api/life_reminder_tick
+# LIFE_REMINDER_TICK_TOKEN=your-life-reminder-tick-token
 
 on:
   schedule:
@@ -12,26 +10,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  trigger-dev:
+  trigger:
     runs-on: ubuntu-latest
     steps:
-      - name: Call life reminder tick endpoint (dev)
+      - name: Call life reminder tick endpoint
         env:
-          LIFE_TICK_URL: ${{ secrets.LIFE_TICK_URL_DEV }}
-          LIFE_REMINDER_TICK_TOKEN: ${{ secrets.LIFE_REMINDER_TICK_TOKEN_DEV }}
-        run: |
-          test -n "$LIFE_TICK_URL"
-          test -n "$LIFE_REMINDER_TICK_TOKEN"
-          curl --fail --show-error --silent \
-            -X POST "$LIFE_TICK_URL" \
-            -H "x-reminder-token: $LIFE_REMINDER_TICK_TOKEN"
-  trigger-main:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Call life reminder tick endpoint (main)
-        env:
-          LIFE_TICK_URL: ${{ secrets.LIFE_TICK_URL_MAIN }}
-          LIFE_REMINDER_TICK_TOKEN: ${{ secrets.LIFE_REMINDER_TICK_TOKEN_MAIN }}
+          LIFE_TICK_URL: ${{ secrets.LIFE_TICK_URL }}
+          LIFE_REMINDER_TICK_TOKEN: ${{ secrets.LIFE_REMINDER_TICK_TOKEN }}
         run: |
           test -n "$LIFE_TICK_URL"
           test -n "$LIFE_REMINDER_TICK_TOKEN"

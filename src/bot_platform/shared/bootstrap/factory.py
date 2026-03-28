@@ -159,6 +159,7 @@ def create_life_application_components(settings: Settings) -> tuple[Application,
     app.add_handler(CommandHandler("help", controller.help_command))
     app.add_handler(CommandHandler("status", controller.status_command))
     app.add_handler(CommandHandler("today", controller.today_command))
+    app.add_handler(CommandHandler("tomorrow", controller.tomorrow_command))
     app.add_handler(CommandHandler("upcoming", controller.upcoming_command))
     app.add_handler(CommandHandler("overdue", controller.overdue_command))
     app.add_handler(CommandHandler("followups", controller.followups_command))

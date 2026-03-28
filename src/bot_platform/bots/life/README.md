@@ -29,15 +29,16 @@ Private Telegram life admin bot for:
 - `/start`
 - `/help`
 - `/status`
-- `/today`
-- `/upcoming`
+- `/today` = only today
+- `/tomorrow` = only tomorrow
+- `/upcoming` = next 7 days, including tomorrow
 - `/overdue`
 - `/followups`
 - `/dates`
-- `/done`
-- `/snooze`
-- `/cancel`
-- `/delete`
+- `/done` = latest active item, or reply to a saved item
+- `/snooze 2hours` = latest active item, or reply to a saved item
+- `/cancel` = latest active item, or reply to a saved item
+- `/delete` = same behavior as cancel
 
 ## Good Inputs
 
