@@ -16,10 +16,11 @@ ENV PATH="${POETRY_HOME}/bin:${PATH}"
 WORKDIR /app
 
 COPY pyproject.toml poetry.lock README.md ./
-RUN poetry install --only main --no-interaction --no-ansi
+RUN poetry install --only main --no-root --no-interaction --no-ansi
 
 COPY api ./api
 COPY src ./src
-COPY scripts ./scripts
+
+RUN poetry install --only-root --no-interaction --no-ansi
 
 CMD ["python", "-m", "uvicorn", "api.telegram_webhook:app", "--host", "0.0.0.0", "--port", "3000"]

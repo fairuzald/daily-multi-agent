@@ -74,6 +74,21 @@ class FinanceBotPolicy:
             reply_context=ReplyMessageContext(kind="saved", transaction_id=transaction.transaction_id),
         )
 
+    @staticmethod
+    def format_group_saved_message(transactions: list[TransactionRecord], *, forced_even_split: bool = False) -> BotResponse:
+        total_amount = sum(item.amount for item in transactions)
+        total_label = f"Rp{total_amount:,}".replace(",", ".")
+        lines = [f"Saved {len(transactions)} transactions in one group. Total {total_label}."]
+        for item in transactions:
+            amount = f"Rp{item.amount:,}".replace(",", ".")
+            lines.append(f"- {item.subcategory or item.description or item.category}: {amount}")
+        if forced_even_split:
+            lines.append("Amount allocation used an even split because the original total was ambiguous.")
+        return BotResponse(
+            "\n".join(lines),
+            reply_context=ReplyMessageContext(kind="saved", transaction_id=transactions[-1].transaction_id),
+        )
+
     @classmethod
     def format_confirmation_message(cls, parsed: ParsedTransaction, source_label: str = "message") -> BotResponse:
         amount = f"Rp{parsed.amount:,}".replace(",", ".") if parsed.amount else "-"
@@ -102,6 +117,24 @@ class FinanceBotPolicy:
             "Reply 'yes' to save, or send a correction message.",
             reply_context=ReplyMessageContext(kind="confirmation"),
         )
+
+    @staticmethod
+    def format_group_confirmation_message(item_labels: list[str], shared_total_amount: int, source_label: str) -> BotResponse:
+        total_label = f"Rp{shared_total_amount:,}".replace(",", ".")
+        lines = [
+            f"I detected multiple items in this {source_label}, but one total {total_label} is shared across them.",
+            "",
+            "Items:",
+        ]
+        for label in item_labels:
+            lines.append(f"- {label}")
+        lines.extend(
+            [
+                "",
+                "Reply with one amount per item in the same order, or reply 'force' to split the total evenly and save.",
+            ]
+        )
+        return BotResponse("\n".join(lines), reply_context=ReplyMessageContext(kind="confirmation"))
 
     @classmethod
     def prepare_for_save(cls, parsed: ParsedTransaction) -> ParsedTransaction:

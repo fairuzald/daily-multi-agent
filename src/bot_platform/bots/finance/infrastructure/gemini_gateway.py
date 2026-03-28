@@ -26,7 +26,8 @@ class GeminiClient:
         self._image_prompt = self._load_prompt("receipt_image_parser.txt")
         self._correction_prompt = self._load_prompt("transaction_correction_parser.txt")
 
-    def _load_prompt(self, file_name: str) -> str:
+    @staticmethod
+    def _load_prompt(file_name: str) -> str:
         prompt_path = Path(__file__).resolve().parent.parent / "prompts" / file_name
         return prompt_path.read_text(encoding="utf-8")
 

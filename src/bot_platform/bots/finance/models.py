@@ -48,6 +48,8 @@ class TransactionRecord(BaseModel):
     raw_input: str = ""
     ai_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     status: TransactionStatus = TransactionStatus.CONFIRMED
+    group_id: str = ""
+    group_total_amount: int | None = None
 
     @model_validator(mode="after")
     def validate_accounts(self) -> "TransactionRecord":
@@ -78,6 +80,8 @@ class TransactionRecord(BaseModel):
             self.raw_input,
             f"{self.ai_confidence:.2f}",
             self.status.value,
+            self.group_id,
+            str(self.group_total_amount or ""),
         ]
 
 

@@ -4,3 +4,8 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .vercel/
+plans/
+specs/
+tests/
+.env.dev
+.env.prod

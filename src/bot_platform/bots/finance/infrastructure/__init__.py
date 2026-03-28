@@ -1,4 +1,6 @@
+from bot_platform.bots.finance.infrastructure.ai_router import RotatingAIClient
 from bot_platform.bots.finance.infrastructure.gemini_gateway import GeminiClient
+from bot_platform.bots.finance.infrastructure.openrouter_gateway import OpenRouterClient
 from bot_platform.bots.finance.infrastructure.repositories import BudgetRule, FinanceRepository, LearnedMapping
 from bot_platform.bots.finance.infrastructure.sheets_gateway import GoogleSheetsClient
 from bot_platform.bots.finance.infrastructure.state_store import BotStateStore, PendingTransactionState, ReplyMessageContext
@@ -10,6 +12,8 @@ __all__ = [
     "GeminiClient",
     "GoogleSheetsClient",
     "LearnedMapping",
+    "OpenRouterClient",
     "PendingTransactionState",
     "ReplyMessageContext",
+    "RotatingAIClient",
 ]

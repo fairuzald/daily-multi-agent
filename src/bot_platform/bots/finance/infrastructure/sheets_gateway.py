@@ -22,6 +22,8 @@ SHEET_SCHEMAS: dict[str, list[str]] = {
         "Raw Input",
         "AI Confidence",
         "Status",
+        "Transaction Group ID",
+        "Group Total Amount",
     ],
     "Categories": [
         "Type",
@@ -42,7 +44,14 @@ class GoogleSheetsClient:
     def append_transaction(self, transaction: TransactionRecord) -> None:
         worksheet = self._worksheet("Transactions")
         worksheet.append_row(transaction.to_row(), value_input_option="USER_ENTERED")
-        self._refresh_transaction_date_merges()
+        self._refresh_transaction_merges()
+
+    def append_transactions(self, transactions: list[TransactionRecord]) -> None:
+        if not transactions:
+            return
+        worksheet = self._worksheet("Transactions")
+        worksheet.append_rows([item.to_row() for item in transactions], value_input_option="USER_ENTERED")
+        self._refresh_transaction_merges()
 
     def read_transactions(self) -> list[dict[str, str]]:
         return self._worksheet("Transactions").get_all_records()
@@ -52,8 +61,8 @@ class GoogleSheetsClient:
         rows = worksheet.get_all_values()
         for index, row in enumerate(rows[1:], start=2):
             if row and len(row) >= 1 and row[0] == transaction.transaction_id:
-                worksheet.update(f"A{index}:N{index}", [transaction.to_row()], value_input_option="USER_ENTERED")
-                self._refresh_transaction_date_merges()
+                worksheet.update(f"A{index}:P{index}", [transaction.to_row()], value_input_option="USER_ENTERED")
+                self._refresh_transaction_merges()
                 return
         raise ValueError(f"Transaction {transaction.transaction_id} was not found in the sheet")
 
@@ -133,11 +142,7 @@ class GoogleSheetsClient:
             worksheet = spreadsheet.worksheet(name)
             current = worksheet.row_values(1)
             if current != headers:
-                worksheet.clear()
-                worksheet.append_row(headers)
-        for worksheet in worksheets:
-            if worksheet.title not in SHEET_SCHEMAS:
-                spreadsheet.del_worksheet(worksheet)
+                self._write_header_row(worksheet, headers, current)
 
     def _spreadsheet(self):
         try:
@@ -156,14 +161,20 @@ class GoogleSheetsClient:
             if not current_header:
                 worksheet.append_row(expected_header)
             elif current_header != expected_header:
-                worksheet.clear()
-                worksheet.append_row(expected_header)
+                self._write_header_row(worksheet, expected_header, current_header)
         return worksheet
 
-    def _refresh_transaction_date_merges(self) -> None:
+    def _write_header_row(self, worksheet, headers: list[str], current_header: list[str]) -> None:
+        if not current_header:
+            worksheet.append_row(headers)
+            return
+        end_column = self._column_label(len(headers))
+        worksheet.update(f"A1:{end_column}1", [headers], value_input_option="USER_ENTERED")
+
+    def _refresh_transaction_merges(self) -> None:
         spreadsheet = self._spreadsheet()
         worksheet = spreadsheet.worksheet("Transactions")
-        values = worksheet.col_values(2)
+        values = worksheet.get_all_values()
         if len(values) <= 2:
             return
 
@@ -178,12 +189,40 @@ class GoogleSheetsClient:
                         "startRowIndex": 1,
                         "endRowIndex": max(len(values), 2),
                         "startColumnIndex": 1,
-                        "endColumnIndex": 2,
+                        "endColumnIndex": 16,
                     }
                 }
             }
         ]
 
+        date_values = [row[1] if len(row) > 1 else "" for row in values]
+        requests.extend(self._build_merge_requests(sheet_id=sheet_id, values=date_values, start_column_index=1, end_column_index=2))
+
+        group_values = [row[14] if len(row) > 14 else "" for row in values]
+        for column_index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15):
+            requests.extend(
+                self._build_group_merge_requests(
+                    sheet_id=sheet_id,
+                    rows=values,
+                    group_values=group_values,
+                    column_index=column_index,
+                )
+            )
+
+        spreadsheet.batch_update({"requests": requests})
+
+    @staticmethod
+    def _build_merge_requests(
+        *,
+        sheet_id: int,
+        values: list[str],
+        start_column_index: int,
+        end_column_index: int,
+    ) -> list[dict[str, object]]:
+        if len(values) <= 2:
+            return []
+
+        requests: list[dict[str, object]] = []
         start = 1
         current = values[1]
         for index in range(2, len(values) + 1):
@@ -197,8 +236,8 @@ class GoogleSheetsClient:
                                     "sheetId": sheet_id,
                                     "startRowIndex": start,
                                     "endRowIndex": index,
-                                    "startColumnIndex": 1,
-                                    "endColumnIndex": 2,
+                                    "startColumnIndex": start_column_index,
+                                    "endColumnIndex": end_column_index,
                                 },
                                 "mergeType": "MERGE_ALL",
                             }
@@ -206,8 +245,87 @@ class GoogleSheetsClient:
                     )
                 start = index
                 current = next_value
+        return requests
 
-        spreadsheet.batch_update({"requests": requests})
+    @staticmethod
+    def _build_group_merge_requests(
+        *,
+        sheet_id: int,
+        rows: list[list[str]],
+        group_values: list[str],
+        column_index: int,
+    ) -> list[dict[str, object]]:
+        if len(rows) <= 2:
+            return []
+
+        requests: list[dict[str, object]] = []
+        start: int | None = None
+        current_group = ""
+        current_value = ""
+        for index in range(1, len(rows)):
+            row = rows[index]
+            group_id = row[14] if len(row) > 14 else ""
+            value = row[column_index] if len(row) > column_index else ""
+            if not group_id or not value:
+                if start is not None and index - start > 1:
+                    requests.append(
+                        {
+                            "mergeCells": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": start,
+                                    "endRowIndex": index,
+                                    "startColumnIndex": column_index,
+                                    "endColumnIndex": column_index + 1,
+                                },
+                                "mergeType": "MERGE_ALL",
+                            }
+                        }
+                    )
+                start = None
+                current_group = ""
+                current_value = ""
+                continue
+            if start is None:
+                start = index
+                current_group = group_id
+                current_value = value
+                continue
+            if group_id != current_group or value != current_value:
+                if index - start > 1:
+                    requests.append(
+                        {
+                            "mergeCells": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": start,
+                                    "endRowIndex": index,
+                                    "startColumnIndex": column_index,
+                                    "endColumnIndex": column_index + 1,
+                                },
+                                "mergeType": "MERGE_ALL",
+                            }
+                        }
+                    )
+                start = index
+                current_group = group_id
+                current_value = value
+        if start is not None and len(rows) - start > 1:
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": start,
+                            "endRowIndex": len(rows),
+                            "startColumnIndex": column_index,
+                            "endColumnIndex": column_index + 1,
+                        },
+                        "mergeType": "MERGE_ALL",
+                    }
+                }
+            )
+        return requests
 
     def _credentials_config(self) -> dict[str, str]:
         if not self.service_account_json.strip():
@@ -227,6 +345,16 @@ class GoogleSheetsClient:
         new_rows = [row for row in rows if tuple(row[:3]) not in existing_keys]
         if new_rows:
             worksheet.append_rows(new_rows, value_input_option="USER_ENTERED")
+
+    @staticmethod
+    def _column_label(index: int) -> str:
+        if index <= 0:
+            raise ValueError("column index must be positive")
+        label = ""
+        while index > 0:
+            index, remainder = divmod(index - 1, 26)
+            label = chr(65 + remainder) + label
+        return label
 
 
 def build_category_rows(category_map: dict[str, dict[str, list[str]]]) -> list[list[str]]:

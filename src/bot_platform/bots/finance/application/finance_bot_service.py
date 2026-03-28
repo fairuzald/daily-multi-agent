@@ -5,13 +5,32 @@ from datetime import date, datetime
 from bot_platform.bots.finance.categories import DEFAULT_CATEGORIES, DEFAULT_WALLETS
 from bot_platform.bots.finance.domain.command_parser import CommandParser, ParsedCommand
 from bot_platform.bots.finance.domain.date_parser import DateParser
+from bot_platform.bots.finance.domain.multi_transaction import (
+    detect_multi_transaction,
+    even_split_amounts,
+    parse_group_allocation_reply,
+)
 from bot_platform.bots.finance.domain.policies import FinanceBotPolicy
 from bot_platform.bots.finance.domain.responses import BotResponse, ReplyContextInput
 from bot_platform.bots.finance.domain.summary_service import SummaryService
-from bot_platform.bots.finance.infrastructure.repositories import BudgetRule, FinanceRepository, LearnedMapping
+from bot_platform.bots.finance.infrastructure.repositories import (
+    BudgetRule,
+    FinanceRepository,
+    LearnedMapping,
+)
 from bot_platform.bots.finance.infrastructure.sheets_gateway import build_category_rows
-from bot_platform.bots.finance.infrastructure.state_store import BotStateStore, PendingTransactionState, ReplyMessageContext
-from bot_platform.bots.finance.models import InputMode, ParsedTransaction, TransactionRecord, TransactionStatus, TransactionType
+from bot_platform.bots.finance.infrastructure.state_store import (
+    BotStateStore,
+    PendingTransactionState,
+    ReplyMessageContext,
+)
+from bot_platform.bots.finance.models import (
+    InputMode,
+    ParsedTransaction,
+    TransactionRecord,
+    TransactionStatus,
+    TransactionType,
+)
 
 
 class FinanceBotService:
@@ -26,6 +45,7 @@ class FinanceBotService:
         service_account_email: str = "",
         default_timezone: str = "Asia/Jakarta",
     ) -> None:
+        self.ai_client = gemini_client
         self.gemini_client = gemini_client
         self.sheets_client_factory = sheets_client_factory
         self.summary_service = summary_service
@@ -55,48 +75,35 @@ class FinanceBotService:
         if not self._is_authorized(user_id):
             return BotResponse(self._unauthorized_message())
         return BotResponse(
-            "Available commands:\n"
-            "/start - claim or initialize the bot\n"
-            "/help - show commands and examples\n"
-            "/status - show owner and sheet setup status\n"
-            "/set_sheet - ask for a Google Sheets link\n"
-            "/add_payment_method - add a payment method like GoPay or BCA\n"
-            "/add_categories - add a category/subcategory row\n"
-            "/today [YYYY-MM-DD] - generate a summary for a day\n"
-            "/week [YYYY-MM-DD|YYYY-Www] - generate a summary for a week\n"
-            "/month [MM-YYYY|YYYY-MM] - generate a summary for a month (`/moth` also works)\n"
-            "/delete_last - delete the latest saved transaction\n"
-            "/delete_reply - delete the transaction behind the replied bot message\n"
-            "/edit_last <amount> [payment_method] - update the latest saved transaction\n"
-            "/edit_reply <amount> [payment_method] - update the replied transaction\n"
-            "/read <category> <today|week|month> - strict transaction query\n"
-            "/budget_set <weekly|monthly> <global|category> <amount> [category] - save a budget rule\n"
-            "/budget_show <weekly|monthly> - show active budget usage\n"
-            "/compare_month - compare this month against the previous month\n"
-            "/whoami - show your Telegram user ID\n\n"
-            "Natural commands:\n"
-            "- `delete last` or reply `delete this`\n"
-            "- `edit last 25000 pakai gopay`\n"
-            "- `show food this week`\n"
-            "- `compare month`\n"
-            "- `set monthly food budget 500000`\n"
-            "- `show budget this month`\n\n"
-            "How to use:\n"
-            "- Send a Google Sheets link after /start or /set_sheet\n"
-            "- Send transactions in plain text, for example:\n"
-            "  beli kopi 25000 pakai bca\n"
-            "  makan siang 45000 kemarin pakai gopay\n"
-            "  gaji masuk 8000000 ke bri\n"
-            "  transfer 500000 dari BCA ke GoPay\n\n"
-            "- Send a voice note in Indonesian for hands-free logging\n"
-            "- Send a receipt, bill photo, or payment screenshot to extract one transaction\n\n"
-            "Accuracy behavior:\n"
-            "- Dates like `today`, `kemarin`, `2 hari lalu`, and `2026-03-27` are resolved in code\n"
-            "- Ambiguous transactions stay in review instead of auto-saving\n"
-            "- Merchant/category learning is reused before asking AI again\n\n"
-            "Config commands:\n"
-            "- /add_payment_method or /add-payment-method then send one value like `GoPay`\n"
-            "- /add_categories or /add-categories then send `expense, Food, Dessert`\n\n"
+            "What I can do:\n"
+            "- Record expense, income, and transfer from natural chat\n"
+            "- Read voice notes in Indonesian\n"
+            "- Extract a transaction from receipt or payment screenshots\n"
+            "- Show daily, weekly, and monthly summaries\n"
+            "- Help review, edit, or delete recent transactions\n"
+            "- Track budgets and compare this month vs last month\n\n"
+            "Try messages like:\n"
+            "- beli kopi 25000 pakai bca\n"
+            "- makan siang 45000 kemarin pakai gopay\n"
+            "- gaji masuk 8000000 ke bri\n"
+            "- transfer 500000 dari BCA ke GoPay\n"
+            "- show food this week\n"
+            "- show budget this month\n"
+            "- compare month\n"
+            "- delete last\n"
+            "- edit last 25000 pakai gopay\n\n"
+            "Commands:\n"
+            "/start\n"
+            "/help\n"
+            "/status\n"
+            "/set_sheet\n"
+            "/today\n"
+            "/week\n"
+            "/month\n"
+            "/whoami\n\n"
+            "Setup commands:\n"
+            "/add_payment_method\n"
+            "/add_categories\n\n"
             f"For sheet setup, share your sheet with this service account as Editor:\n{self.service_account_email}"
         )
 
@@ -166,7 +173,7 @@ class FinanceBotService:
 
         matched_reply_context = self._matched_reply_context(chat_id, reply_context)
         pending = self.state_store.get_pending(chat_id)
-        if pending is not None and (matched_reply_context is None or matched_reply_context.kind == "confirmation"):
+        if pending is not None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return self._handle_pending_confirmation(chat_id, message_text, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse(
@@ -180,7 +187,11 @@ class FinanceBotService:
                 "Reply to a saved transaction message to correct it, or use /month MM-YYYY for another month."
             )
 
-        parsed = self.gemini_client.parse_transaction(message_text)
+        multi_candidate = detect_multi_transaction(message_text)
+        if multi_candidate is not None:
+            return self._handle_multi_transaction(chat_id, multi_candidate, input_mode=InputMode.TEXT, message_datetime=message_datetime)
+
+        parsed = self.ai_client.parse_transaction(message_text)
         parsed = self._apply_deterministic_enrichment(parsed, message_text, message_datetime)
         return self._handle_parsed_transaction(chat_id=chat_id, parsed=parsed, input_mode=InputMode.TEXT)
 
@@ -198,7 +209,7 @@ class FinanceBotService:
             return BotResponse("No Google Sheet is configured yet. Use /start or /set_sheet and send the sheet link first.")
         matched_reply_context = self._matched_reply_context(chat_id, reply_context)
         pending = self.state_store.get_pending(chat_id)
-        if pending is not None and (matched_reply_context is None or matched_reply_context.kind == "confirmation"):
+        if pending is not None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return self._handle_pending_confirmation(chat_id, transcript, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse(
@@ -206,7 +217,10 @@ class FinanceBotService:
             )
         if matched_reply_context and matched_reply_context.kind == "saved":
             return self._handle_saved_reply(chat_id, transcript, matched_reply_context)
-        parsed = self.gemini_client.parse_transaction(transcript)
+        multi_candidate = detect_multi_transaction(transcript)
+        if multi_candidate is not None:
+            return self._handle_multi_transaction(chat_id, multi_candidate, input_mode=InputMode.VOICE, message_datetime=message_datetime)
+        parsed = self.ai_client.parse_transaction(transcript)
         parsed = self._apply_deterministic_enrichment(parsed, transcript, message_datetime)
         return self._handle_parsed_transaction(chat_id=chat_id, parsed=parsed, input_mode=InputMode.VOICE)
 
@@ -224,7 +238,7 @@ class FinanceBotService:
             return BotResponse("No Google Sheet is configured yet. Use /start or /set_sheet and send the sheet link first.")
         matched_reply_context = self._matched_reply_context(chat_id, reply_context)
         pending = self.state_store.get_pending(chat_id)
-        if pending is not None and (matched_reply_context is None or matched_reply_context.kind == "confirmation"):
+        if pending is not None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return self._handle_pending_confirmation(chat_id, parsed.raw_input, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse(
@@ -401,40 +415,72 @@ class FinanceBotService:
     def _load_transactions(self) -> list[TransactionRecord]:
         records: list[TransactionRecord] = []
         current_transaction_date = ""
+        current_group_id = ""
+        group_shared_values: dict[str, str] = {}
         for row in self._sheets_client().read_transactions():
             if not row:
                 continue
+            group_id = str(row.get("Transaction Group ID") or "").strip()
+            if group_id and group_id != current_group_id:
+                current_group_id = group_id
+                group_shared_values = {}
+
             row_transaction_date = str(row.get("Transaction Date") or "").strip()
             if row_transaction_date:
                 current_transaction_date = row_transaction_date
             if not current_transaction_date:
                 continue
-            transaction_type = FinanceBotPolicy.normalize_transaction_type(row)
-            amount_value = FinanceBotPolicy.parse_row_amount(row)
+            resolved_row = dict(row)
+            if group_id:
+                for key in (
+                    "Type",
+                    "Amount",
+                    "Description",
+                    "Category",
+                    "Payment Method",
+                    "Destination Account / Wallet",
+                    "Merchant / Source",
+                    "Input Mode",
+                    "Raw Input",
+                    "AI Confidence",
+                    "Status",
+                    "Group Total Amount",
+                ):
+                    value = str(resolved_row.get(key) or "").strip()
+                    if value:
+                        group_shared_values[key] = value
+                    elif key in group_shared_values:
+                        resolved_row[key] = group_shared_values[key]
+            transaction_type = FinanceBotPolicy.normalize_transaction_type(resolved_row)
+            amount_value = FinanceBotPolicy.parse_row_amount(resolved_row)
             if transaction_type is None or amount_value is None:
                 continue
-            input_mode, raw_input, ai_confidence, status = FinanceBotPolicy.normalize_transaction_runtime_fields(row)
-            account_to = str(row.get("Destination Account / Wallet") or "").strip()
+            input_mode, raw_input, ai_confidence, status = FinanceBotPolicy.normalize_transaction_runtime_fields(resolved_row)
+            account_to = str(resolved_row.get("Destination Account / Wallet") or "").strip()
             if transaction_type != TransactionType.TRANSFER:
                 account_to = ""
             try:
                 records.append(
                     TransactionRecord(
-                        transaction_id=str(row.get("Transaction ID") or ""),
+                        transaction_id=str(resolved_row.get("Transaction ID") or ""),
                         transaction_date=current_transaction_date,
                         type=transaction_type,
                         amount=amount_value,
-                        category=str(row.get("Category") or "Other"),
-                        subcategory=str(row.get("Subcategory") or ""),
-                        account_from=str(row.get("Payment Method") or row.get("Account / Wallet") or ""),
+                        category=str(resolved_row.get("Category") or "Other"),
+                        subcategory=str(resolved_row.get("Subcategory") or ""),
+                        account_from=str(resolved_row.get("Payment Method") or resolved_row.get("Account / Wallet") or ""),
                         account_to=account_to,
-                        merchant_or_source=str(row.get("Merchant / Source") or ""),
-                        description=str(row.get("Description") or ""),
-                        payment_method=str(row.get("Payment Method") or row.get("Account / Wallet") or ""),
+                        merchant_or_source=str(resolved_row.get("Merchant / Source") or ""),
+                        description=str(resolved_row.get("Description") or ""),
+                        payment_method=str(resolved_row.get("Payment Method") or resolved_row.get("Account / Wallet") or ""),
                         input_mode=input_mode,
                         raw_input=raw_input,
                         ai_confidence=ai_confidence,
                         status=status,
+                        group_id=group_id,
+                        group_total_amount=int("".join(ch for ch in str(resolved_row.get("Group Total Amount") or "") if ch.isdigit()))
+                        if str(resolved_row.get("Group Total Amount") or "").strip()
+                        else None,
                     )
                 )
             except Exception:
@@ -442,6 +488,12 @@ class FinanceBotService:
         return records
 
     def _handle_pending_confirmation(self, chat_id: int, message_text: str, pending: PendingTransactionState) -> BotResponse:
+        if pending.kind == "group":
+            return self._handle_group_pending_confirmation(chat_id, message_text, pending)
+
+        if pending.parsed is None:
+            self.state_store.clear_pending(chat_id)
+            return BotResponse("That pending transaction expired. Please send it again.")
         parsed = pending.parsed
         normalized = message_text.strip().lower()
         if normalized in {"yes", "y", "ok", "oke", "correct", "confirm", "save"}:
@@ -453,6 +505,58 @@ class FinanceBotService:
 
         self.state_store.set_pending(chat_id, updated, pending.input_mode)
         return FinanceBotPolicy.format_confirmation_message(updated)
+
+    def _handle_group_pending_confirmation(
+        self,
+        chat_id: int,
+        message_text: str,
+        pending: PendingTransactionState,
+    ) -> BotResponse:
+        shared_total_amount = pending.shared_total_amount or 0
+        normalized = " ".join(message_text.strip().lower().split())
+        if any(token in normalized for token in {"force", "just do it", "paksa"}):
+            allocations = even_split_amounts(shared_total_amount, len(pending.item_inputs))
+            return self._save_group_transactions(
+                chat_id=chat_id,
+                item_inputs=pending.item_inputs,
+                raw_input=pending.raw_input,
+                input_mode=pending.input_mode,
+                message_datetime=None,
+                allocations=allocations,
+                shared_total_amount=shared_total_amount,
+                forced_even_split=True,
+            )
+
+        allocations = parse_group_allocation_reply(
+            message_text,
+            expected_count=len(pending.item_inputs),
+            shared_total_amount=shared_total_amount,
+        )
+        if allocations is None:
+            self.state_store.set_pending_group(
+                chat_id,
+                raw_input=pending.raw_input,
+                item_inputs=pending.item_inputs,
+                item_labels=pending.item_labels,
+                shared_total_amount=shared_total_amount,
+                input_mode=pending.input_mode,
+            )
+            return FinanceBotPolicy.format_group_confirmation_message(
+                pending.item_labels,
+                shared_total_amount,
+                FinanceBotPolicy.source_label(pending.input_mode),
+            )
+
+        return self._save_group_transactions(
+            chat_id=chat_id,
+            item_inputs=pending.item_inputs,
+            raw_input=pending.raw_input,
+            input_mode=pending.input_mode,
+            message_datetime=None,
+            allocations=allocations,
+            shared_total_amount=shared_total_amount,
+            forced_even_split=False,
+        )
 
     def _apply_follow_up_answer(self, parsed: ParsedTransaction, message_text: str) -> ParsedTransaction:
         if not parsed.missing_fields:
@@ -556,7 +660,7 @@ class FinanceBotService:
                 "I could not find the original transaction behind that reply anymore. "
                 "Please resend the corrected transaction as a new message."
             )
-        corrected = self.gemini_client.correct_transaction(original=original, correction_input=message_text)
+        corrected = self.ai_client.correct_transaction(original=original, correction_input=message_text)
         corrected = FinanceBotPolicy.prepare_for_save(corrected)
         if corrected.confidence < self.low_confidence_threshold or corrected.missing_fields:
             self.state_store.set_pending(chat_id, corrected, original.input_mode)
@@ -572,6 +676,83 @@ class FinanceBotService:
             f"Updated: {updated_record.type.value.title()} Rp{updated_record.amount:,}".replace(",", "."),
             reply_context=ReplyMessageContext(kind="saved", transaction_id=updated_record.transaction_id),
         )
+
+    def _handle_multi_transaction(
+        self,
+        chat_id: int,
+        candidate,
+        *,
+        input_mode: InputMode,
+        message_datetime: datetime | None,
+    ) -> BotResponse:
+        if candidate.kind == "ambiguous":
+            self.state_store.set_pending_group(
+                chat_id,
+                raw_input=candidate.raw_input,
+                item_inputs=candidate.item_inputs,
+                item_labels=candidate.item_labels,
+                shared_total_amount=candidate.shared_total_amount or 0,
+                input_mode=input_mode,
+            )
+            return FinanceBotPolicy.format_group_confirmation_message(
+                candidate.item_labels,
+                candidate.shared_total_amount or 0,
+                FinanceBotPolicy.source_label(input_mode),
+            )
+
+        return self._save_group_transactions(
+            chat_id=chat_id,
+            item_inputs=candidate.item_inputs,
+            raw_input=candidate.raw_input,
+            input_mode=input_mode,
+            message_datetime=message_datetime,
+            allocations=None,
+            shared_total_amount=None,
+            forced_even_split=False,
+        )
+
+    def _save_group_transactions(
+        self,
+        *,
+        chat_id: int,
+        item_inputs: list[str],
+        raw_input: str,
+        input_mode: InputMode,
+        message_datetime: datetime | None,
+        allocations: list[int] | None,
+        shared_total_amount: int | None,
+        forced_even_split: bool,
+    ) -> BotResponse:
+        transactions: list[TransactionRecord] = []
+        group_id = f"group_{chat_id}_{abs(hash((raw_input, tuple(item_inputs))))}"
+        for index, item_input in enumerate(item_inputs):
+            parsed = self.ai_client.parse_transaction(item_input)
+            parsed = self._apply_deterministic_enrichment(parsed, raw_input, message_datetime)
+            if allocations is not None:
+                parsed = parsed.model_copy(update={"amount": allocations[index], "raw_input": raw_input})
+            else:
+                parsed = parsed.model_copy(update={"raw_input": raw_input})
+            parsed = FinanceBotPolicy.prepare_for_save(parsed)
+            if parsed.confidence < self.low_confidence_threshold or parsed.missing_fields:
+                return BotResponse(
+                    "I detected multiple items, but I could not safely save all rows yet. "
+                    "Please send clearer item amounts or split them into separate messages."
+                )
+            transaction = parsed.to_transaction_record(input_mode=input_mode).model_copy(
+                update={
+                    "group_id": group_id,
+                    "group_total_amount": shared_total_amount,
+                }
+            )
+            transactions.append(transaction)
+
+        self._sheets_client().append_transactions(transactions)
+        self.state_store.clear_pending(chat_id)
+        self.state_store.set_last_transaction_id(chat_id, transactions[-1].transaction_id)
+        for transaction in transactions:
+            self.state_store.set_transaction_snapshot(transaction)
+            self._learn_mapping_from_transaction(transaction)
+        return FinanceBotPolicy.format_group_saved_message(transactions, forced_even_split=forced_even_split)
 
     def _handle_command(
         self,
@@ -619,7 +800,7 @@ class FinanceBotService:
         if transaction is None:
             return BotResponse("I could not find a transaction to edit. Reply to a saved message or edit the last one.")
         correction_input = message_text.split(maxsplit=1)[1] if len(message_text.split(maxsplit=1)) > 1 else message_text
-        corrected = self.gemini_client.correct_transaction(original=transaction, correction_input=correction_input)
+        corrected = self.ai_client.correct_transaction(original=transaction, correction_input=correction_input)
         corrected = self._apply_deterministic_enrichment(corrected, correction_input, message_datetime)
         corrected = FinanceBotPolicy.prepare_for_save(corrected)
         if corrected.confidence < self.low_confidence_threshold or corrected.missing_fields:

@@ -3,19 +3,43 @@ from __future__ import annotations
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from bot_platform.bots.finance.application.finance_bot_service import FinanceBotService
-from bot_platform.bots.finance.infrastructure.repositories import FinanceRepository
-from bot_platform.shared.config.settings import Settings
+from bot_platform.bots.finance.infrastructure.ai_router import RotatingAIClient
 from bot_platform.bots.finance.infrastructure.gemini_gateway import GeminiClient
+from bot_platform.bots.finance.infrastructure.openrouter_gateway import OpenRouterClient
+from bot_platform.bots.finance.infrastructure.repositories import FinanceRepository
 from bot_platform.bots.finance.infrastructure.sheets_gateway import GoogleSheetsClient
 from bot_platform.bots.finance.infrastructure.state_store import BotStateStore
-from bot_platform.bots.finance.interfaces.telegram.controller import TelegramBotController
 from bot_platform.bots.finance.domain.summary_service import SummaryService
+from bot_platform.bots.finance.interfaces.telegram.controller import TelegramBotController
+from bot_platform.shared.config.settings import Settings
 
 
 def build_finance_bot_service(settings: Settings) -> FinanceBotService:
-    gemini_client = GeminiClient(api_key=settings.gemini_api_key)
+    gemini_client = GeminiClient(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
+    openrouter_client = None
+    if settings.openrouter_api_key:
+        openrouter_client = OpenRouterClient(
+            api_key=settings.openrouter_api_key,
+            text_models=settings.openrouter_models_text,
+            vision_models=settings.openrouter_models_vision,
+            audio_models=settings.openrouter_models_audio,
+            base_url=settings.openrouter_base_url,
+        )
+    if settings.primary_ai_provider == "openrouter":
+        primary_client = openrouter_client
+        fallback_client = gemini_client
+    else:
+        primary_client = gemini_client
+        fallback_client = openrouter_client
+    if primary_client is None:
+        raise RuntimeError(f"Primary AI provider `{settings.primary_ai_provider}` is not configured.")
+    ai_client = RotatingAIClient(
+        primary=primary_client,
+        fallback=fallback_client,
+        cooldown_seconds=settings.ai_fallback_cooldown_seconds,
+    )
     return FinanceBotService(
-        gemini_client=gemini_client,
+        gemini_client=ai_client,
         sheets_client_factory=lambda sheet_id: GoogleSheetsClient(
             spreadsheet_id=sheet_id,
             service_account_json=settings.google_service_account_json,

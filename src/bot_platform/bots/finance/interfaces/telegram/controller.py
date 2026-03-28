@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 
+import httpx
 from telegram import PhotoSize, Update
 from telegram.ext import ContextTypes
 
@@ -15,16 +16,21 @@ logger = logging.getLogger(__name__)
 def humanize_processing_error(exc: Exception, *, source: str) -> BotResponse:
     error_text = str(exc)
 
-    if "RESOURCE_EXHAUSTED" in error_text or "quota exceeded" in error_text.lower() or "429" in error_text:
+    if (
+        "RESOURCE_EXHAUSTED" in error_text
+        or "quota exceeded" in error_text.lower()
+        or "429" in error_text
+        or "temporarily exhausted" in error_text.lower()
+    ):
         retry_match = re.search(r"retry in ([0-9]+(?:\.[0-9]+)?)s", error_text, flags=re.IGNORECASE)
         retry_seconds = ""
         if retry_match:
             retry_seconds = str(int(float(retry_match.group(1))))
         if retry_seconds:
             return BotResponse(
-                f"Gemini quota is temporarily exhausted. Please wait about {retry_seconds} seconds and try again."
+                f"The AI service is temporarily exhausted. Please wait about {retry_seconds} seconds and try again."
             )
-        return BotResponse("Gemini quota is temporarily exhausted. Please wait a bit and try again.")
+        return BotResponse("The AI service is temporarily exhausted. Please wait a bit and try again.")
 
     if "deadline" in error_text.lower() or "timeout" in error_text.lower():
         return BotResponse(
@@ -35,6 +41,14 @@ def humanize_processing_error(exc: Exception, *, source: str) -> BotResponse:
         return BotResponse(
             "The bot could not access the AI service for that request. Please check the API key or try again later."
         )
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        body = (exc.response.text or "").strip()
+        return BotResponse(f"HTTP error {status}: {body or error_text}")
+
+    if any(token in error_text.lower() for token in ("openrouter error", "gemini", "upstream", "api error", "payment required", "not found")):
+        return BotResponse(error_text)
 
     return BotResponse(f"I couldn't process that {source} safely right now. Please try again or send a simpler version.")
 
@@ -332,7 +346,7 @@ class TelegramBotController:
             telegram_file = await context.bot.get_file(update.message.voice.file_id)
             audio_bytes = bytes(await telegram_file.download_as_bytearray())
             mime_type = update.message.voice.mime_type or "audio/ogg"
-            transcript = self.bot_service.gemini_client.transcribe_voice_note(audio_bytes=audio_bytes, mime_type=mime_type)
+            transcript = self.bot_service.ai_client.transcribe_voice_note(audio_bytes=audio_bytes, mime_type=mime_type)
             reply = self.bot_service.handle_voice_transcript(
                 user_id=update.effective_user.id,
                 chat_id=update.effective_chat.id,
@@ -363,7 +377,7 @@ class TelegramBotController:
                 return
 
             image_bytes = bytes(await telegram_file.download_as_bytearray())
-            parsed = self.bot_service.gemini_client.parse_transaction_image(
+            parsed = self.bot_service.ai_client.parse_transaction_image(
                 image_bytes=image_bytes,
                 mime_type=mime_type,
                 caption=caption,

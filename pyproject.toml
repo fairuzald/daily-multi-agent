@@ -19,6 +19,7 @@ include = [
 fastapi = ">=0.116.1"
 google-genai = ">=1.10.0"
 gspread = ">=6.1.2"
+httpx = ">=0.28.1"
 pydantic = ">=2.8.2"
 psycopg = {version = ">=3.2.9", extras = ["binary"]}
 python-dotenv = ">=1.0.1"
@@ -27,7 +28,6 @@ uvicorn = ">=0.35.0"
 watchfiles = ">=1.1.0"
 
 [tool.poetry.group.dev.dependencies]
-httpx = ">=0.28.1"
 pytest = ">=8.3.5"
 
 [build-system]

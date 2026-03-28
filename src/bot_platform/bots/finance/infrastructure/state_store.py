@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from bot_platform.bots.finance.models import InputMode, ParsedTransaction, TransactionRecord
 from bot_platform.shared.persistence.json_store import JsonKeyValueStore
@@ -9,8 +9,13 @@ from bot_platform.shared.persistence.json_store import JsonKeyValueStore
 @dataclass
 class PendingTransactionState:
     chat_id: int
-    parsed: ParsedTransaction
+    parsed: ParsedTransaction | None = None
     input_mode: InputMode = InputMode.TEXT
+    kind: str = "single"
+    raw_input: str = ""
+    item_inputs: list[str] = field(default_factory=list)
+    item_labels: list[str] = field(default_factory=list)
+    shared_total_amount: int | None = None
 
 
 @dataclass
@@ -71,14 +76,49 @@ class BotStateStore:
         self.store.set_value("awaiting_sheet_link", awaiting)
 
     def set_pending(self, chat_id: int, parsed: ParsedTransaction, input_mode: InputMode = InputMode.TEXT) -> None:
-        state = PendingTransactionState(chat_id=chat_id, parsed=parsed, input_mode=input_mode)
+        state = PendingTransactionState(chat_id=chat_id, parsed=parsed, input_mode=input_mode, kind="single")
         self._pending[chat_id] = state
         self.store.set_value(
             self._pending_key(chat_id),
             {
                 "chat_id": chat_id,
+                "kind": "single",
                 "parsed": parsed.model_dump(mode="json"),
                 "input_mode": input_mode.value,
+            },
+        )
+
+    def set_pending_group(
+        self,
+        chat_id: int,
+        *,
+        raw_input: str,
+        item_inputs: list[str],
+        item_labels: list[str],
+        shared_total_amount: int,
+        input_mode: InputMode = InputMode.TEXT,
+    ) -> None:
+        state = PendingTransactionState(
+            chat_id=chat_id,
+            parsed=None,
+            input_mode=input_mode,
+            kind="group",
+            raw_input=raw_input,
+            item_inputs=list(item_inputs),
+            item_labels=list(item_labels),
+            shared_total_amount=shared_total_amount,
+        )
+        self._pending[chat_id] = state
+        self.store.set_value(
+            self._pending_key(chat_id),
+            {
+                "chat_id": chat_id,
+                "kind": "group",
+                "input_mode": input_mode.value,
+                "raw_input": raw_input,
+                "item_inputs": list(item_inputs),
+                "item_labels": list(item_labels),
+                "shared_total_amount": shared_total_amount,
             },
         )
 
@@ -89,10 +129,16 @@ class BotStateStore:
         value = self.store.get_value(self._pending_key(chat_id))
         if value is None:
             return None
+        kind = str(value.get("kind") or "single")
         pending = PendingTransactionState(
             chat_id=int(value["chat_id"]),
-            parsed=ParsedTransaction.model_validate(value["parsed"]),
+            parsed=ParsedTransaction.model_validate(value["parsed"]) if value.get("parsed") is not None else None,
             input_mode=InputMode(value["input_mode"]),
+            kind=kind,
+            raw_input=str(value.get("raw_input") or ""),
+            item_inputs=list(value.get("item_inputs") or []),
+            item_labels=list(value.get("item_labels") or []),
+            shared_total_amount=int(value["shared_total_amount"]) if value.get("shared_total_amount") is not None else None,
         )
         self._pending[chat_id] = pending
         return pending

@@ -1,33 +1,9 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: bot-platform-finance-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: bot_platform_finance
-      POSTGRES_USER: bot_platform_finance
-      POSTGRES_PASSWORD: bot_platform_finance
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bot_platform_finance -d bot_platform_finance"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
   bot:
     build: .
     container_name: bot-platform-finance
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      DATABASE_URL: postgresql://bot_platform_finance:bot_platform_finance@postgres:5432/bot_platform_finance
     ports:
       - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-volumes:
-  postgres_data:

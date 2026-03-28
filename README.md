@@ -1,247 +1,254 @@
 # Bot Platform Finance Bot
 
-Personal finance Telegram bot built on top of a reusable `bot_platform` package. It logs Indonesian transactions into Google Sheets, persists bot state in Postgres, and supports deterministic date handling, safer review flow, natural edit/delete/read commands, budgets, category learning, and month-over-month reporting.
+Personal finance Telegram bot for daily money tracking in Indonesian. It turns natural chat, voice notes, and payment screenshots into structured transactions stored in Google Sheets, while keeping review flows safe for ambiguous inputs.
 
-## Features
+The runtime model is now simple:
 
-- Log expenses, income, and transfers from Telegram chat
-- Parse Indonesian finance language with Gemini only where deterministic logic is not enough
-- Store structured records in Google Sheets
-- Generate daily, weekly, monthly, and month-over-month summaries
-- Bootstrap the required sheet tabs and headers
-- Track daily spending across GoPay, BCA, BRI, DANA, and ShopeePay
-- Lock the bot to one Telegram owner account
-- Configure the active Google Sheet from chat by sending the sheet link
-- Resolve common date expressions like `today`, `kemarin`, and `2 hari lalu` in code
-- Queue ambiguous transactions for review instead of auto-saving them
-- Support natural commands for delete, edit, read, and budget workflows
-- Learn merchant/category mappings from confirmed corrections
-- Run locally or in Docker Compose through the same FastAPI webhook flow
+- local development uses `.env.dev`
+- production-like runtime uses `.env`
+- Docker Compose runs only the bot container
+- Postgres must be external and reachable through `DATABASE_URL`
 
-## Project Layout
+## What This Product Does
 
-- `api/telegram_webhook.py`: FastAPI webhook entrypoint
-- `src/bot_platform/shared/bootstrap/factory.py`: dependency wiring and Telegram application assembly
-- `src/bot_platform/shared/config/settings.py`: environment loading and typed settings
-- `src/bot_platform/shared/persistence/json_store.py`: shared Postgres-backed key/value persistence
-- `src/bot_platform/bots/finance/interfaces/telegram/controller.py`: Telegram controller and transport-level error handling
-- `src/bot_platform/bots/finance/application/finance_bot_service.py`: finance bot workflows
-- `src/bot_platform/bots/finance/domain/date_parser.py`: deterministic date handling
-- `src/bot_platform/bots/finance/domain/command_parser.py`: deterministic command parsing
-- `src/bot_platform/bots/finance/infrastructure/gemini_gateway.py`: Gemini integration
-- `src/bot_platform/bots/finance/infrastructure/sheets_gateway.py`: Google Sheets integration
-- `src/bot_platform/bots/finance/infrastructure/state_store.py`: persistent bot state
-- `src/bot_platform/bots/finance/infrastructure/repositories.py`: budgets and learned mappings
+This bot is built for one owner-operated personal finance workflow:
 
-## Setup
+- capture expenses, income, and transfers directly from Telegram
+- save transactions into a connected Google Sheet
+- keep a Postgres-backed memory for owner access, reply context, budgets, and learned mappings
+- generate daily, weekly, monthly, and month-to-month summaries
+- support safer review when an input is ambiguous instead of silently guessing
 
-1. Install Poetry.
-2. Install dependencies:
+It is optimized for casual Indonesian finance messages like:
 
-```bash
-poetry install
-```
-
-3. Copy `.env.example` into `.env` and fill the values.
-   The app and helper scripts load `.env` automatically from the project root, so you do not need to `source .env` first.
-
-Google credentials must be provided as raw JSON in:
-
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-
-The bot stores its persistent owner/sheet setup in Postgres, configured by:
-
-- `DATABASE_URL`
-
-Optional env vars:
-
-- `DEFAULT_CURRENCY`
-- `DEFAULT_TIMEZONE`
-- `LOW_CONFIDENCE_THRESHOLD`
-
-## Sheet Initialization
-
-The main bot now handles sheet initialization from chat after you send a Google Sheets link. It checks the required tabs and headers and fixes them if needed.
-
-Required tabs:
-
-- `Transactions`
-- `Categories`
-- `Summary`
-
-## Run Locally
-
-```bash
-poetry run uvicorn api.telegram_webhook:app --reload --port 3000
-```
-
-This is the same webhook procedure used for production. Expose port `3000` with `ngrok` when you want Telegram to hit your local machine.
-
-## Run With Docker Compose
-
-```bash
-docker compose up --build
-```
-
-The compose setup mounts `./data` into the container so the owner Telegram ID and active sheet selection survive restarts.
-The compose setup runs a Postgres container and persists bot state in the `postgres_data` Docker volume so owner and active sheet survive restarts.
-
-## Run Docker Compose In Dev Mode
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-```
-
-This runs the same FastAPI webhook app with `uvicorn --reload` and bind-mounts the project so code changes trigger reload.
-
-## Run Tests
-
-```bash
-poetry run env PYTHONPATH=src python -m pytest -q
-```
-
-## Usage Examples
-
-- `/start`
-- `/help`
-- `/status`
-- `/whoami`
-- `/set_sheet`
-- `/today`
-- `/week`
-- `beli kopi 25 ribu pakai bca`
+- `beli kopi 25000 pakai bca`
 - `makan siang 45000 kemarin pakai gopay`
-- `gaji masuk 8 juta`
-- `transfer 500 ribu dari BCA ke GoPay`
-- `/month`
-- `/delete_last`
-- `/delete_reply`
-- `/edit_last 30000 GoPay`
-- `/edit_reply 30000 GoPay`
-- `/read Food week`
-- `/budget_set monthly category 500000 Food`
-- `/budget_show monthly`
-- `/compare_month`
-- `delete last`
-- `edit last 30000 pakai gopay`
-- `show food this week`
-- `set monthly food budget 500000`
-- `show budget this month`
-- `compare month`
+- `gaji masuk 8000000 ke bri`
+- `transfer 500000 dari BCA ke GoPay`
 
-## First-Chat Setup Flow
+## Main Capabilities
 
-1. Start the bot with `/start`
-2. The first Telegram user to do this becomes the owner
-3. The bot asks for a Google Sheets link
-4. Share that sheet with the service account email as `Editor`
-5. Send the full Google Sheets link in chat
-6. The bot extracts the sheet ID, verifies `Transactions`, `Categories`, and `Summary`, repairs headers if needed, seeds default categories when the categories tab is empty, and starts using that sheet
+### 1. Transaction Capture
 
-## Recap Commands
+The bot can record:
 
-- `/today` uses today by default, or accepts `/today YYYY-MM-DD`
-- `/week` uses the current week by default, or accepts `/week YYYY-MM-DD` or `/week YYYY-Www`
-- `/month` uses the current month by default, or accepts `/month YYYY-MM` or `/month MM-YYYY`
-- `/moth` is accepted as an alias for `/month`
+- expenses
+- income
+- transfers between accounts or wallets
 
-## Strict Action Commands
+It accepts:
 
-- `/delete_last`
-- `/delete_reply`
-- `/edit_last <amount> [payment_method]`
-- `/edit_reply <amount> [payment_method]`
-- `/read <category> <today|week|month>`
-- `/budget_set <weekly|monthly> <global|category> <amount> [category]`
-- `/budget_show <weekly|monthly>`
-- `/compare_month`
+- natural text messages
+- Indonesian voice notes
+- receipt, payment, and transaction screenshots
+
+### 2. Smart Parsing With Safer Review
+
+The bot combines deterministic logic with AI parsing:
+
+- common date phrases like `today`, `kemarin`, `2 hari lalu`, and exact dates are resolved in code
+- learned merchant and category mappings are reused before asking AI again
+- low-confidence or incomplete results can be kept in review instead of auto-saved
+- grouped messages with multiple items can be split into multiple rows
+
+Examples:
+
+- `es teh 2000 dan roti bakar 30000 pakai gopay`  
+  Saves two rows automatically if the amounts are explicit.
+
+- `es teh dan roti bakar seharga 20000 pakai gopay`  
+  Asks for clarification because one shared total covers multiple items.
+
+- reply `force`  
+  Splits the shared total evenly and saves the grouped rows.
+
+### 3. Google Sheets As The Working Ledger
+
+The connected Google Sheet is the working transaction ledger. The bot manages:
+
+- required tabs
+- header repair
+- grouped row merges for multi-item saves
+- category and payment-method seed/setup
+- summary sheet rebuilds
+
+### 4. Voice And Image Support
+
+The bot supports:
+
+- Indonesian voice note transcription
+- image parsing for receipts and payment screenshots
+- provider routing between Gemini and OpenRouter
+- OpenRouter model pools with ordered failover and round-robin recovery
+
+### 5. Review, Edit, Delete, And Readback
+
+After a save, the bot can help you correct or remove recent records. It supports:
+
+- edit last transaction
+- delete last transaction
+- reply-based edit and delete
+- read transactions by category and period
+
+### 6. Budget And Comparison Workflows
+
+The bot can:
+
+- set weekly or monthly budgets
+- show budget status
+- compare this month with the previous month
+- summarize spending and income by period
+
+## Commands And What They Do
+
+### Core
+
+- `/start`  
+  Claim bot ownership on first use and begin sheet setup.
+
+- `/help`  
+  Show a short capability summary and examples.
+
+- `/status`  
+  Show owner, active sheet, and setup status.
+
+- `/whoami`  
+  Show your Telegram user ID and authorization status.
+
+- `/set_sheet`  
+  Start or replace the active Google Sheet connection.
+
+### Period Summaries
+
+- `/today [YYYY-MM-DD]`  
+  Show today’s summary or a specific day.
+
+- `/week [YYYY-MM-DD|YYYY-Www]`  
+  Show the current week or a specific week.
+
+- `/month [YYYY-MM|MM-YYYY]`  
+  Show the current month or a specific month.
+
+- `/moth`  
+  Alias for `/month`.
+
+### Transaction Actions
+
+- `/delete_last`  
+  Delete the most recent saved transaction.
+
+- `/delete_reply`  
+  Delete the transaction represented by the replied bot message.
+
+- `/edit_last <amount> [payment_method]`  
+  Edit the most recent saved transaction.
+
+- `/edit_reply <amount> [payment_method]`  
+  Edit the transaction represented by the replied bot message.
+
+- `/read <category> <today|week|month>`  
+  Read filtered transactions for a category and period.
+
+### Budgeting
+
+- `/budget_set <weekly|monthly> <global|category> <amount> [category]`  
+  Create or update a budget rule.
+
+- `/budget_show <weekly|monthly>`  
+  Show budget usage and status.
+
+- `/compare_month`  
+  Compare the current month with the previous one.
+
+### Setup Utilities
+
+- `/add_payment_method`  
+  Add one payment method or wallet label.
+
+- `/add_categories`  
+  Add a category row with `type, category, subcategory`.
+
+## Typical Product Workflows
+
+### First-Time Setup
+
+1. Send `/start`
+2. The first Telegram user becomes the owner
+3. Share a Google Sheet with the service account as `Editor`
+4. Send the full Google Sheets link
+5. The bot validates the required tabs and starts saving transactions
+
+### Save A Text Transaction
+
+1. Send `beli kopi 25000 pakai bca`
+2. The bot parses the message
+3. If it is clear enough, it saves the row
+4. If not, it asks for confirmation or correction
+
+### Save A Voice Note
+
+1. Send a voice note in Indonesian
+2. The bot transcribes it
+3. The transcript is parsed into a transaction
+4. The result is saved or sent to review depending on confidence
+
+### Save A Screenshot
+
+1. Send a receipt or payment screenshot
+2. The bot extracts the transaction details
+3. The result is saved or returned for review
+
+### Split A Grouped Purchase
+
+1. Send `es teh 2000 dan roti bakar 30000 pakai gopay`
+2. The bot saves multiple rows
+
+If one total is shared:
+
+1. Send `es teh dan roti bakar seharga 20000 pakai gopay`
+2. The bot asks for item allocation
+3. Reply with explicit amounts or `force`
+
+## Product Rules And Behavior
+
+- only one Telegram owner is allowed to operate the bot
+- pending confirmations only continue when you reply to the bot’s confirmation message
+- a normal new message is treated as a fresh input, not as confirmation of an older pending state
+- Google Sheets remains the working source for transaction history
+- Postgres stores bot state, owner identity, reply context, budgets, and learned mappings
 
 ## Current Limitations
 
-- The summary sheet is rebuilt from backend-generated rows rather than spreadsheet formulas.
-- Public-edit Google Sheets links alone are not enough for reliable API writes; in practice you should still share the sheet with the service account as `Editor`.
-- Google Sheets is the source of record for your transaction history.
+- grouped multi-item parsing assumes one shared date unless restated
+- mixed-provider or mixed-date list inputs are not aggressively split yet
+- screenshot parsing quality depends on the provider/model actually handling the image
+- summary sheets are rebuilt from backend-generated rows rather than spreadsheet formulas
 
-## Webhook Deployment
+## Documentation
 
-The bot now uses one procedure everywhere: Telegram webhook -> FastAPI app -> Telegram controller -> finance application service.
+- Setup: [docs/setup.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup.md)
+- Development: [docs/development.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/development.md)
+- Deployment: [docs/deployment.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/deployment.md)
 
-### Vercel
+## Quick Start
 
-Deploy the repo as an `Other` project. The Vercel entrypoint is the FastAPI app in:
-
-- `api/telegram_webhook.py`
-
-Required production env vars:
-
-- `TELEGRAM_BOT_TOKEN`
-- `GEMINI_API_KEY`
-- `GOOGLE_SERVICE_ACCOUNT_JSON`
-- `DATABASE_URL`
-- `LOW_CONFIDENCE_THRESHOLD`
-- `DEFAULT_CURRENCY`
-- `DEFAULT_TIMEZONE`
-
-Important:
-
-- `DATABASE_URL` must point to a hosted Postgres database reachable from Vercel
-- the Docker Compose Postgres is only for local development
-
-### Local Webhook Testing
-
-Run the webhook app locally with FastAPI:
+For local development:
 
 ```bash
-poetry run uvicorn api.telegram_webhook:app --reload --port 3000
+make install
+make local-dev
+make ngrok-dev
+make webhook-set-dev
 ```
 
-Then expose it with `ngrok`:
+For Docker-based development with Dozzle:
 
 ```bash
-ngrok http 3000
+make docker-dev
 ```
 
-Your Telegram webhook URL should be:
-
-```text
-https://<your-ngrok-domain>/api/telegram_webhook
-```
-
-### Telegram Webhook Setup
-
-After the Vercel deployment is live, register the Telegram webhook:
+For production-like Docker runtime:
 
 ```bash
-curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<your-vercel-domain>/api/telegram_webhook"
+make docker-prod
 ```
-
-To inspect the current webhook:
-
-```bash
-curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
-```
-
-If you need to replace an old webhook URL, remove it first:
-
-```bash
-curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/deleteWebhook"
-```
-
-## Transactions Tab Layout
-
-The bot writes the `Transactions` tab with this human-friendly column order:
-
-- `Transaction ID`
-- `Transaction Date`
-- `Type`
-- `Amount`
-- `Subcategory`
-- `Description`
-- `Category`
-- `Payment Method`
-- `Destination Account / Wallet`
-- `Merchant / Source`
-- `Input Mode`
-- `Raw Input`
-- `AI Confidence`
-- `Status`
