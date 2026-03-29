@@ -44,7 +44,7 @@ async def _dispatch_life_reminders() -> int:
     application, service = create_life_application_components(settings)
     await application.initialize()
     try:
-        return await asyncio.to_thread(service.dispatch_due_reminders, bot=application.bot)
+        return await service.dispatch_due_reminders(bot=application.bot)
     finally:
         await application.shutdown()
 

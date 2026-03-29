@@ -118,6 +118,7 @@ class LifeItemParser:
         matched_text = ""
         all_day = True
         due_date: datetime | None = None
+        has_explicit_date = False
 
         relative_minutes = re.search(r"\bin\s+(\d+)\s+minutes?\b|\b(\d+)\s+menit\s+lagi\b", lowered)
         if relative_minutes:
@@ -143,12 +144,14 @@ class LifeItemParser:
         if explicit:
             due_date = datetime(int(explicit.group(1)), int(explicit.group(2)), int(explicit.group(3)), tzinfo=now.tzinfo)
             matched_text = explicit.group(0)
+            has_explicit_date = True
 
         if due_date is None:
             slash = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b", lowered)
             if slash:
                 due_date = datetime(int(slash.group(3)), int(slash.group(2)), int(slash.group(1)), tzinfo=now.tzinfo)
                 matched_text = slash.group(0)
+                has_explicit_date = True
 
         if due_date is None:
             month_match = re.search(r"\b(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?\b", lowered)
@@ -160,6 +163,7 @@ class LifeItemParser:
                     if due_date.date() < now.date() and month_match.group(3) is None:
                         due_date = due_date.replace(year=year + 1)
                     matched_text = month_match.group(0)
+                    has_explicit_date = True
 
         if due_date is None:
             relative_patterns = (
@@ -196,15 +200,16 @@ class LifeItemParser:
                 matched_text = weekday_match.group(0).strip()
 
         time_match = re.search(
-            r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b"
-            r"|\bjam\s*(\d{1,2})(?::|\.?)(\d{2})?\b"
-            r"|\bat\s+(\d{1,2})(?::(\d{2}))\b",
+            r"\b(?P<h12>\d{1,2})(?::(?P<m12>\d{2}))?\s*(?P<ampm>am|pm)\b"
+            r"|\bjam\s*(?P<jh>\d{1,2})(?:(?::|\.)\s*(?P<jm>\d{2}))?\s*(?P<jperiod>pagi|siang|sore|malam)?\b"
+            r"|\bat\s+(?P<ah>\d{1,2})(?::(?P<am>\d{2}))\s*(?P<aperiod>am|pm)?\b",
             lowered,
         )
         if time_match:
-            hour_text = time_match.group(1) or time_match.group(4) or time_match.group(6)
-            minute_text = time_match.group(2) or time_match.group(5) or time_match.group(7) or "0"
-            meridiem = time_match.group(3)
+            hour_text = time_match.group("h12") or time_match.group("jh") or time_match.group("ah")
+            minute_text = time_match.group("m12") or time_match.group("jm") or time_match.group("am") or "0"
+            meridiem = time_match.group("ampm") or time_match.group("aperiod")
+            period = time_match.group("jperiod")
             hour = int(hour_text)
             minute = int(minute_text)
             if meridiem:
@@ -213,9 +218,15 @@ class LifeItemParser:
                     hour += 12
                 if meridiem == "am" and hour == 12:
                     hour = 0
+            elif period:
+                hour = self._apply_time_period(hour, period.lower())
+            elif 1 <= hour <= 11:
+                hour += 12
             if due_date is None:
                 due_date = now
             due_date = due_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if not has_explicit_date and due_date <= now:
+                due_date += timedelta(days=1)
             all_day = False
             matched_text = f"{matched_text} {time_match.group(0)}".strip()
 
@@ -225,6 +236,18 @@ class LifeItemParser:
         if all_day:
             due_date = due_date.replace(hour=9, minute=0, second=0, microsecond=0)
         return due_date, matched_text.strip(), all_day
+
+    @staticmethod
+    def _apply_time_period(hour: int, period: str) -> int:
+        if period == "pagi":
+            return 0 if hour == 12 else hour
+        if period in {"siang", "sore"}:
+            return hour if hour >= 12 else hour + 12
+        if period == "malam":
+            if hour == 12:
+                return 0
+            return hour if hour >= 12 else hour + 12
+        return hour
 
     def _extract_recurrence(self, text: str) -> tuple[str, str]:
         lowered = text.lower()

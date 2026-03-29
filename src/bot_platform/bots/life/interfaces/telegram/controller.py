@@ -206,6 +206,65 @@ class LifeTelegramController:
     async def delete_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await self.cancel_command(update, context)
 
+    async def view_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        reply_context = self._reply_context(update)
+        if reply_context is not None:
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_view(update.effective_user.id, reply_context.item_id),
+            )
+            return
+        if len(context.args) == 0:
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_view_latest(update.effective_user.id),
+            )
+            return
+        if len(context.args) != 1:
+            await self._reply(update, "Use /view for the latest active item, or reply to a saved item and send /view, or use /view <item_id>.")
+            return
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_view(update.effective_user.id, context.args[0]),
+        )
+
+    async def edit_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        reply_context = self._reply_context(update)
+        correction_text = " ".join(context.args).strip()
+        if reply_context is not None:
+            if not correction_text:
+                await self._reply(update, "Reply to a saved item with /edit <new text> or /ubah <new text>.")
+                return
+            await self._run_and_reply(
+                update,
+                source="command",
+                callback=lambda: self.bot_service.handle_edit(
+                    update.effective_user.id,
+                    reply_context.item_id,
+                    correction_text,
+                    message_datetime=update.message.date if update.message else None,
+                ),
+            )
+            return
+        if len(context.args) < 2:
+            await self._reply(update, "Use /edit <item_id> <new text>, or reply to a saved item with /edit <new text>.")
+            return
+        target = context.args[0]
+        correction_text = " ".join(context.args[1:]).strip()
+        await self._run_and_reply(
+            update,
+            source="command",
+            callback=lambda: self.bot_service.handle_edit(
+                update.effective_user.id,
+                target,
+                correction_text,
+                message_datetime=update.message.date if update.message else None,
+            ),
+        )
+
     async def text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.text:
             return

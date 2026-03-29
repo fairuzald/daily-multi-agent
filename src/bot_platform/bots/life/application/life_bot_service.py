@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -9,7 +10,12 @@ from bot_platform.bots.life.domain.responses import LifeBotResponse
 from bot_platform.bots.life.domain.scheduling import advance_recurrence, shift_with_same_offset
 from bot_platform.bots.life.infrastructure.calendar_gateway import GoogleCalendarGateway
 from bot_platform.bots.life.infrastructure.repositories import LifeRepository
-from bot_platform.bots.life.infrastructure.state_store import LifeReplyContext, LifeStateStore, PendingLifeParseState
+from bot_platform.bots.life.infrastructure.state_store import (
+    LifeReplyContext,
+    LifeStateStore,
+    PendingLifeConfirmationState,
+    PendingLifeParseState,
+)
 
 
 class LifeBotService:
@@ -60,8 +66,10 @@ class LifeBotService:
             "Actions:\n"
             "- /done = mark the latest active item as done, or reply to a saved item\n"
             "- /cancel or /delete = cancel the latest active item, or reply to a saved item\n"
+            "- /view or /detail = show one saved item's details, including by reply\n"
+            "- /edit or /ubah = update one saved item by reply or item id\n"
             "- /snooze 2hours = snooze the latest active item, or reply to a saved item\n"
-            "- plain text also works naturally: done, cancel this, delete that, snooze this 2hours\n"
+            "- plain text also works naturally: done, cancel this, delete that, hapus ini, detail ini, ubah jadi besok jam 1 siang, snooze this 2hours\n"
             "- if parsing fails, reply to the bot's rewrite prompt with a clearer sentence\n\n"
             "Reminder delivery:\n"
             "- Telegram reminders are checked every 5 minutes by the reminder tick\n"
@@ -120,6 +128,12 @@ class LifeBotService:
                 return LifeBotResponse("That pending rewrite expired. Please send the reminder again.")
             return self._handle_pending_rewrite(chat_id, pending, text, message_datetime=message_datetime)
 
+        if reply_context and reply_context.kind == "confirmation":
+            pending_confirmation = self.state_store.get_pending_confirmation(chat_id)
+            if pending_confirmation is None:
+                return LifeBotResponse("That confirmation expired. Please send the schedule again.")
+            return self._handle_pending_confirmation(chat_id, pending_confirmation, text)
+
         action_response = self._handle_inline_action(user_id, text)
         if action_response is not None:
             return action_response
@@ -127,7 +141,7 @@ class LifeBotService:
         batch = self._parse_items(text, message_datetime=message_datetime)
         if batch.needs_manual_review or not batch.items:
             return self._queue_manual_review(chat_id, text, batch)
-        return self._save_batch(batch)
+        return self._save_or_confirm_batch(chat_id, batch)
 
     def handle_voice_transcript(
         self,
@@ -271,13 +285,76 @@ class LifeBotService:
     def handle_delete_latest(self, user_id: int) -> LifeBotResponse:
         return self.handle_cancel_latest(user_id)
 
+    def handle_view(self, user_id: int, item_id_fragment: str) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._find_item(item_id_fragment)
+        return LifeBotResponse(self._render_item_detail(item), reply_context=self.item_reply_context(item))
+
+    def handle_view_latest(self, user_id: int) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._latest_active_item()
+        if item is None:
+            return LifeBotResponse("I couldn't find an active item to show. Save one first or reply to a saved item.")
+        return self.handle_view(user_id, item.item_id)
+
+    def handle_edit(
+        self,
+        user_id: int,
+        item_id_fragment: str,
+        correction_text: str,
+        *,
+        message_datetime: datetime | None = None,
+    ) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._find_item(item_id_fragment)
+        batch = self._correct_items(item.raw_input or item.title, correction_text, message_datetime=message_datetime)
+        if batch.needs_manual_review or not batch.items:
+            return LifeBotResponse("I couldn't parse that edit safely. Reply with a clearer rewrite, for example: `ubah jadi bayar wifi besok jam 1 siang`.")
+        parsed = batch.items[0]
+        updated = item.model_copy(
+            update={
+                "type": parsed.type,
+                "title": parsed.title,
+                "person": parsed.person,
+                "details": parsed.details,
+                "due_at": self._normalize_due_datetime(parsed, message_datetime=message_datetime),
+                "remind_at": self._normalize_remind_datetime(parsed, message_datetime=message_datetime),
+                "all_day": parsed.all_day,
+                "recurrence": parsed.recurrence,
+                "raw_input": correction_text,
+                "updated_at": self._now(),
+            }
+        )
+        if updated.due_at is None and updated.calendar_event_id:
+            self.calendar_gateway.delete_event(updated.calendar_event_id)
+            updated = updated.model_copy(update={"calendar_event_id": "", "calendar_event_url": ""})
+        updated, warning = self._sync_calendar(updated)
+        self.repository.save(updated)
+        message = self._render_item_detail(updated, heading="Updated item")
+        if warning:
+            message = f"{message}\n\n{warning}"
+        return LifeBotResponse(message, reply_context=self.item_reply_context(updated))
+
+    def handle_edit_latest(
+        self,
+        user_id: int,
+        correction_text: str,
+        *,
+        message_datetime: datetime | None = None,
+    ) -> LifeBotResponse:
+        self._ensure_owner(user_id)
+        item = self._latest_active_item()
+        if item is None:
+            return LifeBotResponse("I couldn't find an active item to edit. Save one first or reply to a saved item.")
+        return self.handle_edit(user_id, item.item_id, correction_text, message_datetime=message_datetime)
+
     def item_reply_context(self, item: LifeItem) -> LifeReplyContext:
         return LifeReplyContext(kind="item", item_id=item.item_id)
 
     def pending_reply_context(self) -> LifeReplyContext:
         return LifeReplyContext(kind="pending")
 
-    def dispatch_due_reminders(self, *, bot) -> int:
+    async def dispatch_due_reminders(self, *, bot) -> int:
         chat_id = self.state_store.get_owner_chat_id()
         if chat_id is None:
             return 0
@@ -285,7 +362,7 @@ class LifeBotService:
         count = 0
         for item in self.repository.list_due_for_reminder(now):
             message = self._render_due_reminder(item)
-            bot.send_message(chat_id=chat_id, text=message)
+            await bot.send_message(chat_id=chat_id, text=message)
             updated = item.model_copy(
                 update={
                     "last_reminded_at": now,
@@ -313,7 +390,22 @@ class LifeBotService:
         if batch.needs_manual_review or not batch.items:
             return self._queue_manual_review(chat_id, pending.raw_input, batch, correction_text=rewrite_text)
         self.state_store.clear_pending_parse(chat_id)
-        return self._save_batch(batch)
+        return self._save_or_confirm_batch(chat_id, batch)
+
+    def _handle_pending_confirmation(
+        self,
+        chat_id: int,
+        pending: PendingLifeConfirmationState,
+        text: str,
+    ) -> LifeBotResponse:
+        normalized = " ".join(text.strip().lower().split())
+        if normalized in {"ya", "yes", "y", "ok", "oke", "confirm"}:
+            self.state_store.clear_pending_confirmation(chat_id)
+            return self._save_batch(pending.batch)
+        if normalized in {"tidak", "no", "n", "batal", "cancel"}:
+            self.state_store.clear_pending_confirmation(chat_id)
+            return LifeBotResponse("Cancelled the pending schedule.")
+        return LifeBotResponse("Reply `ya`/`yes` to save it anyway, or `batal`/`no` to cancel.", reply_context=LifeReplyContext(kind="confirmation"))
 
     def _parse_items(self, text: str, *, message_datetime: datetime | None) -> ParsedLifeBatch:
         if self.ai_client is None:
@@ -336,6 +428,21 @@ class LifeBotService:
             timezone_name=self.default_timezone,
         )
 
+    def _save_or_confirm_batch(self, chat_id: int, batch: ParsedLifeBatch) -> LifeBotResponse:
+        if self._batch_needs_confirmation(batch):
+            self.state_store.set_pending_confirmation(chat_id, PendingLifeConfirmationState(batch=batch))
+            item_preview = self._create_item_from_parsed(batch.items[0])
+            scheduled_at = item_preview.scheduled_at() or self._now()
+            return LifeBotResponse(
+                "This schedule resolves to a past time.\n"
+                f"- {item_preview.title}\n"
+                f"- Scheduled: {self._format_when(scheduled_at, all_day=item_preview.all_day)}\n"
+                "Reply `ya`/`yes` to save it anyway, or `batal`/`no` to cancel.",
+                reply_context=LifeReplyContext(kind="confirmation"),
+            )
+        self.state_store.clear_pending_confirmation(chat_id)
+        return self._save_batch(batch)
+
     def _save_batch(self, batch: ParsedLifeBatch) -> LifeBotResponse:
         saved_items: list[tuple[LifeItem, str]] = []
         for parsed in batch.items:
@@ -350,8 +457,8 @@ class LifeBotService:
         return LifeBotResponse(self._render_created_batch(saved_items))
 
     def _create_item_from_parsed(self, parsed: ParsedLifeItem) -> LifeItem:
-        normalized_due = self._normalize_datetime(parsed.due_at)
-        normalized_remind = self._normalize_datetime(parsed.remind_at)
+        normalized_due = self._normalize_due_datetime(parsed)
+        normalized_remind = self._normalize_remind_datetime(parsed)
         now = self._now()
         return LifeItem(
             type=parsed.type,
@@ -449,6 +556,8 @@ class LifeBotService:
         lines = [f"Saved as {item.type.value}:", f"- {item.title}"]
         if item.person:
             lines.append(f"- Person: {item.person}")
+        if item.details:
+            lines.append(f"- Details: {item.details}")
         if item.due_at is not None:
             lines.append(f"- Scheduled: {self._format_when(item.due_at, all_day=item.all_day)}")
         if item.recurrence:
@@ -494,8 +603,35 @@ class LifeBotService:
             f"- Scheduled: {self._format_when(item.scheduled_at() or self._now(), all_day=item.all_day)}"
         )
 
+    def _render_item_detail(self, item: LifeItem, *, heading: str = "Item details") -> str:
+        lines = [
+            f"{heading}:",
+            f"- Title: {item.title}",
+            f"- Type: {item.type.value}",
+            f"- Status: {item.status.value}",
+            f"- Item ID: {item.item_id}",
+        ]
+        if item.person:
+            lines.append(f"- Person: {item.person}")
+        if item.details:
+            lines.append(f"- Details: {item.details}")
+        if item.due_at is not None:
+            lines.append(f"- Scheduled: {self._format_when(item.due_at, all_day=item.all_day)}")
+        if item.remind_at is not None and item.remind_at != item.due_at:
+            lines.append(f"- Reminder: {self._format_when(item.remind_at, all_day=False)}")
+        if item.recurrence:
+            lines.append(f"- Recurs: {item.recurrence}")
+        if item.calendar_event_url:
+            lines.append(f"- Calendar: {item.calendar_event_url}")
+        elif item.calendar_event_id:
+            lines.append("- Calendar: synced")
+        if item.raw_input:
+            lines.append(f"- Captured from: {item.raw_input}")
+        return "\n".join(lines)
+
     def _handle_inline_action(self, user_id: int, text: str, *, reply_item_id: str = "") -> LifeBotResponse | None:
-        normalized = " ".join(text.strip().lower().split())
+        compact_text = " ".join(text.strip().split())
+        normalized = compact_text.lower()
         if normalized in {"done", "/done", "mark done", "done this", "mark this done", "finish this"}:
             target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
             if not target_item:
@@ -512,11 +648,39 @@ class LifeBotService:
             "delete this",
             "delete that",
             "delete it",
+            "hapus",
+            "/hapus",
+            "hapus ini",
+            "hapus itu",
         }:
             target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
             if not target_item:
                 return LifeBotResponse("I couldn't find an active item to cancel. Save one first or reply to a saved item.")
             return self.handle_cancel(user_id, target_item)
+        if normalized in {
+            "detail",
+            "/detail",
+            "view",
+            "/view",
+            "read",
+            "/read",
+            "lihat",
+            "/lihat",
+            "detail ini",
+            "lihat ini",
+            "show details",
+            "show this",
+        }:
+            target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
+            if not target_item:
+                return LifeBotResponse("I couldn't find an active item to show. Save one first or reply to a saved item.")
+            return self.handle_view(user_id, target_item)
+        correction_text = self._extract_edit_text(compact_text)
+        if correction_text:
+            target_item = reply_item_id or (self._latest_active_item().item_id if self._latest_active_item() else "")
+            if not target_item:
+                return LifeBotResponse("I couldn't find an active item to edit. Save one first or reply to a saved item.")
+            return self.handle_edit(user_id, target_item, correction_text)
         if normalized.startswith("snooze ") or normalized.startswith("/snooze "):
             amount_text = "".join(ch for ch in normalized if ch.isdigit())
             if not amount_text:
@@ -527,6 +691,72 @@ class LifeBotService:
                 return LifeBotResponse("I couldn't find an active item to snooze. Save one first or reply to a saved item.")
             return self.handle_snooze(user_id, target_item, int(amount_text), unit)
         return None
+
+    @staticmethod
+    def _extract_edit_text(text: str) -> str:
+        lowered = text.lower()
+        for prefix in ("ubah jadi ", "edit jadi ", "/ubah ", "ubah ", "/edit ", "edit "):
+            if lowered.startswith(prefix):
+                return text[len(prefix):].strip()
+        return ""
+
+    def _batch_needs_confirmation(self, batch: ParsedLifeBatch) -> bool:
+        now = self._now()
+        for parsed in batch.items:
+            item = self._create_item_from_parsed(parsed)
+            scheduled_at = item.scheduled_at()
+            if scheduled_at is not None and scheduled_at < now:
+                return True
+        return False
+
+    def _normalize_due_datetime(
+        self,
+        parsed: ParsedLifeItem,
+        *,
+        message_datetime: datetime | None = None,
+    ) -> datetime | None:
+        value = self._normalize_datetime(parsed.due_at)
+        if value is None:
+            return None
+        return self._apply_ambiguous_time_rules(value, raw_input=parsed.raw_input, reference_time=self._reference_time(message_datetime))
+
+    def _normalize_remind_datetime(
+        self,
+        parsed: ParsedLifeItem,
+        *,
+        message_datetime: datetime | None = None,
+    ) -> datetime | None:
+        value = self._normalize_datetime(parsed.remind_at)
+        if value is None:
+            return None
+        due_at = self._normalize_due_datetime(parsed, message_datetime=message_datetime)
+        if parsed.due_at is not None and parsed.remind_at == parsed.due_at:
+            return due_at
+        return value
+
+    def _apply_ambiguous_time_rules(self, value: datetime, *, raw_input: str, reference_time: datetime) -> datetime:
+        lowered = raw_input.lower()
+        ambiguous_match = re.search(r"\bjam\s+([1-9]|1[01])(?:(?::|\.)\d{2})?\b", lowered)
+        has_explicit_period = any(token in lowered for token in (" am", " pm", "pagi", "siang", "sore", "malam"))
+        if ambiguous_match and not has_explicit_period:
+            preferred_hour = int(ambiguous_match.group(1)) + 12
+            value = value.replace(hour=preferred_hour)
+            if not self._mentions_explicit_date(lowered) and value <= reference_time:
+                value += timedelta(days=1)
+        return value
+
+    @staticmethod
+    def _mentions_explicit_date(text: str) -> bool:
+        return bool(
+            re.search(r"\b\d{4}-\d{2}-\d{2}\b", text)
+            or re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b", text)
+            or re.search(r"\b(today|hari ini|tomorrow|besok|next week|minggu depan)\b", text)
+            or re.search(
+                r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu)\b",
+                text,
+            )
+            or re.search(r"\b\d{1,2}\s+[a-zA-Z]+\b", text)
+        )
 
     def _normalize_datetime(self, value: datetime | None) -> datetime | None:
         if value is None:

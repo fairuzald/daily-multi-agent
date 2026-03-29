@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bot_platform.bots.life.domain.models import ParsedLifeBatch, ParsedLifeItem
 from bot_platform.shared.persistence.namespaced_state import NamespacedStateStore
 
 
@@ -14,6 +15,11 @@ class LifeReplyContext:
 @dataclass
 class PendingLifeParseState:
     raw_input: str
+
+
+@dataclass
+class PendingLifeConfirmationState:
+    batch: ParsedLifeBatch
 
 
 class LifeStateStore:
@@ -69,3 +75,23 @@ class LifeStateStore:
 
     def clear_pending_parse(self, chat_id: int) -> None:
         self.shared.clear_pending_payload(chat_id, "pending_parse")
+
+    def set_pending_confirmation(self, chat_id: int, pending: PendingLifeConfirmationState) -> None:
+        self.shared.set_pending_payload(
+            chat_id,
+            "pending_confirmation",
+            {"items": [item.model_dump(mode="json") for item in pending.batch.items]},
+        )
+
+    def get_pending_confirmation(self, chat_id: int) -> PendingLifeConfirmationState | None:
+        value = self.shared.get_pending_payload(chat_id, "pending_confirmation")
+        if not isinstance(value, dict):
+            return None
+        raw_items = value.get("items")
+        if not isinstance(raw_items, list) or not raw_items:
+            return None
+        items = [ParsedLifeItem.model_validate(item) for item in raw_items]
+        return PendingLifeConfirmationState(batch=ParsedLifeBatch(items=items))
+
+    def clear_pending_confirmation(self, chat_id: int) -> None:
+        self.shared.clear_pending_payload(chat_id, "pending_confirmation")
