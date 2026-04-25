@@ -31,7 +31,10 @@ class TransactionQueryService:
             return ParsedTransaction.model_validate(payload)
 
         payload = parsed.model_dump()
-        payload["transaction_date"] = date_resolution.resolved_date
+        reference_date = self.runtime.date_parser.reference_date(message_datetime)
+        existing_date = payload.get("transaction_date")
+        if date_resolution.matched_text or existing_date in (None, reference_date):
+            payload["transaction_date"] = date_resolution.resolved_date
 
         for mapping in self.runtime.finance_repository.list_learned_mappings():
             if mapping.pattern.lower() not in raw_text.lower():

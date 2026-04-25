@@ -32,6 +32,8 @@ Main principles:
 - If the user is vague, use `clarify` instead of forcing a wrong action.
 - If the user is replying to a saved transaction and asks to change it, prefer `edit`.
 - If the user is replying to a saved transaction and asks to remove it, prefer `delete`.
+- If the user is replying to a saved transaction but is describing another purchase or another finance event, prefer `transaction`, not `edit`.
+- In that case, reuse the saved transaction only as supporting context for fields like date, payment method, category, or account when the new message does not restate them.
 - If the input is a normal finance record, use `transaction`.
 - If the user asks for ringkasan/summary/rekap/laporan, use `summary`.
 - If the user asks to compare this month and another month, use `compare_month`.
@@ -63,6 +65,12 @@ Provider and account rules:
 Clarification rules:
 - `clarification_message` must be normal Indonesian that an ordinary user can read.
 - Example: `Aku masih belum yakin. Ini maksudnya mau ubah transaksi yang tadi atau bikin transaksi baru?`
+
+Reply interpretation examples:
+- Saved transaction reply + `ubah ini jadi 35rb pakai GoPay` => `edit`
+- Saved transaction reply + `hapus ini` => `delete`
+- Saved transaction reply + `saya juga beli kentang goreng 33000` => `transaction`
+- Saved transaction reply + `tambahin cola 12000` => `transaction`
 
 Output JSON shape:
 {

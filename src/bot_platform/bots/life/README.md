@@ -17,6 +17,7 @@ Private Telegram life admin bot for:
 - Google Calendar sync for dated items
 - Telegram reminders through the reminder tick endpoint
 - pending rewrite mode when parsing is unsafe
+- recurring reminders with `until` end-date support
 
 ## Item Types
 
@@ -38,17 +39,28 @@ Private Telegram life admin bot for:
 - `/followups`
 - `/dates`
 - `/done` = latest active item, or reply to a saved item
+- `/view` or `/detail` = latest active item, or reply to a saved item
+- `/edit` or `/ubah` = edit by reply or item id
 - `/snooze 2hours` = latest active item, or reply to a saved item
 - `/cancel` = latest active item, or reply to a saved item
 - `/delete` = same behavior as cancel
 
 ## Good Inputs
 
-- `pay wifi tomorrow 9am`
-- `remind me in 5 minutes to check transfer`
-- `follow up with Aldi next Tuesday 8pm`
-- `mom birthday 12 May`
-- `pay wifi tomorrow and follow up with Aldi on Friday 8pm`
+- `bayar wifi besok jam 9`
+- `ingatkan cek transfer 5 menit lagi`
+- `follow up Aldi Selasa depan jam 8 malam`
+- `ulang tahun ibu 12 Mei`
+- `bayar kos tiap bulan sampai 30 Mei 2026`
+- `bayar wifi besok dan follow up Aldi Jumat jam 8 malam`
+
+## Current Life Flow
+
+- user sends text or voice
+- one unified extractor interprets the message or rewrite
+- if parsing is safe, items are saved immediately
+- if the message is still unclear, the bot stores a pending rewrite context and asks for a clearer version
+- reply-based actions like `done`, `hapus ini`, `detail ini`, `ubah jadi ...`, and `snooze 2hours` are handled on top of saved item context
 
 ## First Use
 

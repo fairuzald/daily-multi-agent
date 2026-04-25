@@ -16,9 +16,8 @@ Recommended:
 
 The life bot is AI-first. It uses AI to:
 
-- classify item type
 - extract one or more items from one message
-- recover from natural rewrite replies
+- handle natural rewrite replies through the same unified extraction path
 - transcribe voice notes
 
 If AI providers are not configured, the bot falls back to the local deterministic parser for simple single-item inputs.
@@ -46,13 +45,18 @@ This repo includes a GitHub Actions scheduler for that. Set these GitHub secrets
 - `LIFE_TICK_URL`
 - `LIFE_REMINDER_TICK_TOKEN`
 
-## Local Webhook
+Reminder notes:
 
+- recurring reminders can include an `until` date
+- the reminder tick should run repeatedly, for example every 5 minutes
+
+## Local Webhook
 ## First Use
 
 1. Send `/start` from the owner account in that environment
 2. Then test `/whoami`
-3. Then start saving reminders
+3. If using calendar sync, share the calendar with the service account
+4. Then start saving reminders and tasks
 
 Life webhook endpoint:
 
