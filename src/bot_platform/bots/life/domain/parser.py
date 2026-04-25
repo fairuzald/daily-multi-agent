@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .models import LifeItemType, ParsedLifeItem
@@ -72,13 +72,18 @@ class LifeItemParser:
         normalized = " ".join(text.strip().split())
         item_type = self._detect_type(normalized)
         due_at, matched_date_text, all_day = self._extract_datetime(normalized, message_datetime=message_datetime)
-        recurrence, matched_recurrence_text = self._extract_recurrence(normalized)
+        reference_now = self._reference_now(message_datetime)
+        recurrence, matched_recurrence_text, recurrence_until, matched_until_text = self._extract_recurrence(
+            normalized,
+            reference_now=reference_now,
+        )
         person = self._extract_person(normalized, item_type)
         title = self._build_title(
             normalized,
             item_type=item_type,
             matched_date_text=matched_date_text,
             matched_recurrence_text=matched_recurrence_text,
+            matched_until_text=matched_until_text,
         )
         remind_at = due_at
         if item_type == LifeItemType.IMPORTANT_DATE and due_at is not None:
@@ -91,6 +96,7 @@ class LifeItemParser:
             remind_at=remind_at,
             all_day=all_day,
             recurrence=recurrence,
+            recurrence_until=recurrence_until,
             raw_input=text,
         )
 
@@ -249,8 +255,9 @@ class LifeItemParser:
             return hour if hour >= 12 else hour + 12
         return hour
 
-    def _extract_recurrence(self, text: str) -> tuple[str, str]:
+    def _extract_recurrence(self, text: str, *, reference_now: datetime) -> tuple[str, str, date | None, str]:
         lowered = text.lower()
+        recurrence_until, matched_until_text = self._extract_until_date(lowered, reference_now=reference_now)
         direct_map = {
             "every day": "daily",
             "setiap hari": "daily",
@@ -263,14 +270,52 @@ class LifeItemParser:
         }
         for pattern, recurrence in direct_map.items():
             if pattern in lowered:
-                return recurrence, pattern
+                return recurrence, pattern, recurrence_until, matched_until_text
 
         weekday_match = re.search(r"\bevery\s+([a-zA-Z']+)\b|\bsetiap\s+([a-zA-Z']+)\b", lowered)
         if weekday_match:
             weekday_name = (weekday_match.group(1) or weekday_match.group(2) or "").lower()
             if weekday_name in WEEKDAYS:
-                return f"weekday:{weekday_name}", weekday_match.group(0)
-        return "", ""
+                return f"weekday:{weekday_name}", weekday_match.group(0), recurrence_until, matched_until_text
+        return "", "", recurrence_until, matched_until_text
+
+    def _extract_until_date(self, text: str, *, reference_now: datetime) -> tuple[date | None, str]:
+        patterns = (
+            r"\b(?:until|sampai|sampe)\s+(\d{4}-\d{2}-\d{2})\b",
+            r"\b(?:until|sampai|sampe)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4})\b",
+            r"\b(?:until|sampai|sampe)\s+(\d{1,2}\s+[a-zA-Z]+(?:\s+\d{4})?)\b",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+            parsed = self._parse_until_date_fragment(match.group(1), reference_now=reference_now)
+            if parsed is not None:
+                return parsed, match.group(0)
+        return None, ""
+
+    @staticmethod
+    def _parse_until_date_fragment(fragment: str, *, reference_now: datetime) -> date | None:
+        normalized = fragment.strip().lower()
+        explicit = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", normalized)
+        if explicit:
+            return date(int(explicit.group(1)), int(explicit.group(2)), int(explicit.group(3)))
+
+        slash = re.fullmatch(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", normalized)
+        if slash:
+            return date(int(slash.group(3)), int(slash.group(2)), int(slash.group(1)))
+
+        month_match = re.fullmatch(r"(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{4}))?", normalized)
+        if month_match:
+            month_number = MONTHS.get(month_match.group(2).lower())
+            if month_number is None:
+                return None
+            year = int(month_match.group(3) or reference_now.year)
+            resolved = date(year, month_number, int(month_match.group(1)))
+            if month_match.group(3) is None and resolved < reference_now.date():
+                resolved = date(year + 1, month_number, int(month_match.group(1)))
+            return resolved
+        return None
 
     def _extract_person(self, text: str, item_type: LifeItemType) -> str:
         lowered = text.lower()
@@ -290,6 +335,7 @@ class LifeItemParser:
         item_type: LifeItemType,
         matched_date_text: str,
         matched_recurrence_text: str,
+        matched_until_text: str,
     ) -> str:
         title = text
         prefixes = {
@@ -302,6 +348,8 @@ class LifeItemParser:
             title = re.sub(re.escape(matched_date_text), "", title, flags=re.IGNORECASE)
         if matched_recurrence_text:
             title = re.sub(re.escape(matched_recurrence_text), "", title, flags=re.IGNORECASE)
+        if matched_until_text:
+            title = re.sub(re.escape(matched_until_text), "", title, flags=re.IGNORECASE)
         title = re.sub(r"\bin\s+\d+\s+(minutes?|hours?|days?)\b", "", title, flags=re.IGNORECASE)
         title = re.sub(r"\b\d+\s+(menit|jam|hari)\s+lagi\b", "", title, flags=re.IGNORECASE)
         title = re.sub(r"\s+", " ", title).strip(" ,.-")

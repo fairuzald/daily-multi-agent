@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from bot_platform.bots.finance.interfaces.telegram.controller import (
 from bot_platform.shared.telegram.runtime import process_webhook_update
 
 configure_logging()
+logger = logging.getLogger(__name__)
 
 
 async def _process_payload(payload: dict[str, Any]) -> None:
@@ -86,8 +88,10 @@ async def telegram_webhook(request: Request) -> str:
     try:
         await _process_payload(payload)
     except ValueError as exc:
+        logger.exception("Finance webhook rejected payload with value error")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("Finance webhook processing failed", extra={"update_id": payload.get("update_id")})
         humanized = humanize_processing_error(exc, source="webhook request")
         raise HTTPException(status_code=500, detail=str(humanized)) from exc
 
@@ -108,10 +112,13 @@ async def life_telegram_webhook(request: Request) -> str:
     try:
         await _process_life_payload(payload)
     except ValueError as exc:
+        logger.exception("Life webhook rejected payload with value error")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PermissionError as exc:
+        logger.exception("Life webhook rejected payload with permission error")
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception("Life webhook processing failed", extra={"update_id": payload.get("update_id")})
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return "OK"

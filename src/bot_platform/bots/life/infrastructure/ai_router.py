@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import Callable, TypeVar
+from datetime import datetime
+from typing import Callable
 
-from bot_platform.bots.life.infrastructure.ai_client import LifeAIClient, detect_provider_exhaustion
+from bot_platform.bots.life.infrastructure.ai_client import LifeAIClient
+from bot_platform.shared.ai.rotating_client import BaseRotatingAIClient
 
-T = TypeVar("T")
 
-
-class RotatingLifeAIClient:
+class RotatingLifeAIClient(BaseRotatingAIClient[LifeAIClient]):
     def __init__(
         self,
         primary: LifeAIClient,
@@ -16,34 +15,22 @@ class RotatingLifeAIClient:
         cooldown_seconds: int = 300,
         now_factory: Callable[[], datetime] | None = None,
     ) -> None:
-        self.primary = primary
-        self.fallback = fallback
-        self.cooldown_seconds = cooldown_seconds
-        self._now_factory = now_factory or (lambda: datetime.now(UTC))
-        self._primary_blocked_until: datetime | None = None
-
-    def parse_life_items(self, raw_input: str, *, reference_time_iso: str, timezone_name: str):
-        return self._run(
-            lambda client: client.parse_life_items(raw_input, reference_time_iso=reference_time_iso, timezone_name=timezone_name),
-            capability_name="parse_life_items",
+        super().__init__(
+            primary=primary,
+            fallback=fallback,
+            cooldown_seconds=cooldown_seconds,
+            now_factory=now_factory,
         )
 
-    def correct_life_items(
-        self,
-        *,
-        original_input: str,
-        correction_input: str,
-        reference_time_iso: str,
-        timezone_name: str,
-    ):
+    def extract_life_items(self, raw_input: str, *, original_input: str = "", reference_time_iso: str, timezone_name: str):
         return self._run(
-            lambda client: client.correct_life_items(
+            lambda client: client.extract_life_items(
+                raw_input,
                 original_input=original_input,
-                correction_input=correction_input,
                 reference_time_iso=reference_time_iso,
                 timezone_name=timezone_name,
             ),
-            capability_name="correct_life_items",
+            capability_name="extract_life_items",
         )
 
     def transcribe_voice_note(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
@@ -51,60 +38,3 @@ class RotatingLifeAIClient:
             lambda client: client.transcribe_voice_note(audio_bytes=audio_bytes, mime_type=mime_type),
             capability_name="transcribe_voice_note",
         )
-
-    def _run(self, operation: Callable[[LifeAIClient], T], *, capability_name: str) -> T:
-        if self._should_skip_primary():
-            return self._run_with_fallback(operation, capability_name=capability_name)
-        try:
-            result = operation(self.primary)
-        except Exception as exc:
-            exhaustion = detect_provider_exhaustion(exc)
-            if exhaustion is None:
-                raise
-            self._block_primary(retry_after_seconds=exhaustion.retry_after_seconds)
-            return self._run_with_fallback(operation, capability_name=capability_name, primary_exc=exc)
-        self._primary_blocked_until = None
-        return result
-
-    def _run_with_fallback(
-        self,
-        operation: Callable[[LifeAIClient], T],
-        *,
-        capability_name: str,
-        primary_exc: Exception | None = None,
-    ) -> T:
-        if self.fallback is None:
-            raise primary_exc or RuntimeError("AI service is temporarily exhausted. Please try again later.")
-        if not self._supports_capability(self.fallback, capability_name):
-            raise primary_exc or RuntimeError("AI service is temporarily exhausted. Please try again later.")
-        try:
-            return operation(self.fallback)
-        except Exception as fallback_exc:
-            if detect_provider_exhaustion(fallback_exc) is not None:
-                retry_seconds = self._retry_after_seconds()
-                if retry_seconds:
-                    raise RuntimeError(
-                        f"429 RESOURCE_EXHAUSTED. AI providers are temporarily exhausted. Please retry in {retry_seconds}s."
-                    ) from fallback_exc
-                raise RuntimeError("429 RESOURCE_EXHAUSTED. AI providers are temporarily exhausted. Please try again soon.") from fallback_exc
-            raise fallback_exc
-
-    @staticmethod
-    def _supports_capability(client: LifeAIClient, capability_name: str) -> bool:
-        capability = getattr(client, capability_name, None)
-        return callable(capability)
-
-    def _block_primary(self, retry_after_seconds: int | None) -> None:
-        seconds = retry_after_seconds or self.cooldown_seconds
-        self._primary_blocked_until = self._now_factory() + timedelta(seconds=seconds)
-
-    def _should_skip_primary(self) -> bool:
-        return self._primary_blocked_until is not None and self._now_factory() < self._primary_blocked_until
-
-    def _retry_after_seconds(self) -> int | None:
-        if self._primary_blocked_until is None:
-            return None
-        delta = self._primary_blocked_until - self._now_factory()
-        if delta.total_seconds() <= 0:
-            return None
-        return int(delta.total_seconds())

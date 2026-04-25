@@ -14,3 +14,4 @@ class BotResponse(str):
 class ReplyContextInput:
     message_id: int | None = None
     is_bot_reply: bool = False
+    message_text: str = ""

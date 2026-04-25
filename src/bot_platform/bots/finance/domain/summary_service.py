@@ -105,23 +105,27 @@ class SummaryService:
     def format_monthly_summary_message(self, summary: MonthlySummary) -> str:
         overview = summary.overview
         lines = [
-            f"Summary for {overview.month}",
+            f"Ringkasan keuangan untuk {overview.month}",
             "",
-            f"Income: Rp{overview.total_income:,}".replace(",", "."),
-            f"Expenses: Rp{overview.total_expense:,}".replace(",", "."),
-            f"Transfers: Rp{overview.total_transfer:,}".replace(",", "."),
-            f"Net cash flow: Rp{overview.net_cash_flow:,}".replace(",", "."),
-            f"Savings rate: {overview.savings_rate * 100:.1f}%",
+            f"- Pemasukan: Rp{overview.total_income:,}".replace(",", "."),
+            f"- Pengeluaran: Rp{overview.total_expense:,}".replace(",", "."),
+            f"- Transfer: Rp{overview.total_transfer:,}".replace(",", "."),
+            f"- Arus kas bersih: Rp{overview.net_cash_flow:,}".replace(",", "."),
+            f"- Rasio tabungan: {overview.savings_rate * 100:.1f}%",
             "",
-            "Top spending:",
+            "Pengeluaran terbesar:",
         ]
         if summary.expense_categories:
             for index, item in enumerate(summary.expense_categories[:3], start=1):
-                lines.append(f"{index}. {item.category} Rp{item.total_amount:,}".replace(",", "."))
+                lines.append(f"{index}. {item.category}: Rp{item.total_amount:,}".replace(",", "."))
         else:
-            lines.append("No expense transactions in this period.")
+            lines.append("Belum ada pengeluaran di periode ini.")
+        if summary.income_sources:
+            lines.extend(["", "Sumber pemasukan utama:"])
+            for index, item in enumerate(summary.income_sources[:3], start=1):
+                lines.append(f"{index}. {item.source}: Rp{item.total_amount:,}".replace(",", "."))
         if summary.insights:
-            lines.extend(["", "What to improve:"])
+            lines.extend(["", "Catatan penting:"])
             for item in summary.insights[:3]:
                 lines.append(f"- {item.insight_text}")
         return "\n".join(lines)
@@ -135,11 +139,11 @@ class SummaryService:
         top_previous = previous.overview.largest_expense_category or "-"
         return "\n".join(
             [
-                f"Month comparison: {current_month} vs {previous_month}",
-                f"Income delta: Rp{income_delta:,}".replace(",", "."),
-                f"Expense delta: Rp{expense_delta:,}".replace(",", "."),
-                f"Top expense category now: {top_current}",
-                f"Top expense category before: {top_previous}",
+                f"Perbandingan {current_month} vs {previous_month}",
+                f"- Selisih pemasukan: Rp{income_delta:,}".replace(",", "."),
+                f"- Selisih pengeluaran: Rp{expense_delta:,}".replace(",", "."),
+                f"- Pengeluaran terbesar bulan ini: {top_current}",
+                f"- Pengeluaran terbesar bulan sebelumnya: {top_previous}",
             ]
         )
 

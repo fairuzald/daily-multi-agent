@@ -1,53 +1,71 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from bot_platform.bots.life.domain.models import ParsedLifeBatch, ParsedLifeItem, LifeItemType
+from bot_platform.bots.life.domain.models import (
+    LifeItemType,
+    ParsedLifeBatch,
+    ParsedLifeItem,
+)
 from bot_platform.shared.ai.gemini_base import BaseGeminiClient
 
 
 class GeminiClient(BaseGeminiClient):
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash") -> None:
         super().__init__(api_key=api_key, model_name=model_name)
-        prompt_dir = Path(__file__).resolve().parent.parent / "prompts"
-        self._life_prompt = self.load_prompt(prompt_dir, "life_items_parser.txt")
-        self._life_correction_prompt = self.load_prompt(prompt_dir, "life_items_correction_parser.txt")
+        prompt_dir = self.prompt_dir(__file__)
+        self._life_prompt = self.load_prompt(prompt_dir, "life_message_extractor.txt")
 
-    def parse_life_items(self, raw_input: str, *, reference_time_iso: str, timezone_name: str) -> ParsedLifeBatch:
+    def extract_life_items(
+        self,
+        raw_input: str,
+        *,
+        original_input: str = "",
+        reference_time_iso: str,
+        timezone_name: str,
+    ) -> ParsedLifeBatch:
         if not raw_input.strip():
             raise ValueError("raw_input cannot be empty")
         payload = self._call_life_model(
             prompt=self._life_prompt,
-            user_block=(
-                f"Current local datetime: {reference_time_iso}\n"
-                f"Timezone: {timezone_name}\n\n"
-                f"User input:\n{raw_input}"
+            user_block=self._build_user_block(
+                raw_input=raw_input,
+                original_input=original_input,
+                reference_time_iso=reference_time_iso,
+                timezone_name=timezone_name,
             ),
         )
-        return self._normalize_life_batch(payload, fallback_raw_input=raw_input)
+        return self._normalize_life_batch(payload, fallback_raw_input=raw_input or original_input)
 
-    def correct_life_items(
-        self,
+    @staticmethod
+    def _build_user_block(
         *,
+        raw_input: str,
         original_input: str,
-        correction_input: str,
         reference_time_iso: str,
         timezone_name: str,
-    ) -> ParsedLifeBatch:
-        payload = self._call_life_model(
-            prompt=self._life_correction_prompt,
-            user_block=(
-                f"Current local datetime: {reference_time_iso}\n"
-                f"Timezone: {timezone_name}\n\n"
-                f"Original input:\n{original_input}\n\n"
-                f"User rewrite or correction:\n{correction_input}"
-            ),
-        )
-        return self._normalize_life_batch(payload, fallback_raw_input=correction_input or original_input)
+    ) -> str:
+        lines = [
+            f"Current local datetime: {reference_time_iso}",
+            f"Timezone: {timezone_name}",
+            "",
+        ]
+        if original_input.strip():
+            lines.extend(
+                [
+                    "Original saved or previous input:",
+                    original_input,
+                    "",
+                    "User rewrite or correction:",
+                    raw_input,
+                ]
+            )
+        else:
+            lines.extend(["User input:", raw_input])
+        return "\n".join(lines)
 
     def _call_life_model(self, *, prompt: str, user_block: str) -> dict[str, Any]:
         try:
@@ -108,6 +126,8 @@ class GeminiClient(BaseGeminiClient):
                 normalized[field_name] = str(normalized[field_name]).strip()
         if not normalized["raw_input"]:
             normalized["raw_input"] = fallback_raw_input
+        if normalized.get("recurrence_until") in ("", None):
+            normalized["recurrence_until"] = None
         for field_name in ("due_at", "remind_at"):
             if normalized.get(field_name) in ("", None):
                 normalized[field_name] = None

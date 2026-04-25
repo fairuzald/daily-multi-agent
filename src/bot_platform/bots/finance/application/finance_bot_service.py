@@ -96,8 +96,8 @@ class FinanceBotService:
     def handle_voice_transcript(self, user_id: int, chat_id: int, transcript: str, reply_context=None, message_datetime=None):
         return self.message_service.handle_voice_transcript(user_id, chat_id, transcript, reply_context, message_datetime)
 
-    def handle_image_message(self, user_id: int, chat_id: int, parsed, reply_context=None, message_datetime=None):
-        return self.message_service.handle_image_message(user_id, chat_id, parsed, reply_context, message_datetime)
+    def handle_image_message(self, user_id: int, chat_id: int, extraction, reply_context=None, message_datetime=None):
+        return self.message_service.handle_image_message(user_id, chat_id, extraction, reply_context, message_datetime)
 
     def handle_month_command(self, user_id: int, month: str | None = None):
         return self.command_service.handle_month_command(user_id, month)

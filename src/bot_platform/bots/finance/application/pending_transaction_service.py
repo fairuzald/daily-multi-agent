@@ -25,7 +25,7 @@ class PendingTransactionService:
             return BotResponse("That pending transaction expired. Please send it again.")
         parsed = pending.parsed
         normalized = message_text.strip().lower()
-        if normalized in {"yes", "y", "ok", "oke", "correct", "confirm", "save"}:
+        if normalized in {"yes", "y", "ok", "oke", "correct", "confirm", "save", "ya", "iya", "betul"}:
             return self.force_save_pending(chat_id, parsed, pending.input_mode)
 
         updated = self._apply_follow_up_answer(parsed, message_text)

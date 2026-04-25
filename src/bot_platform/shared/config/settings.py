@@ -20,8 +20,8 @@ class Settings:
     primary_ai_provider: str = "gemini"
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_models_text: tuple[str, ...] = ("openrouter/free",)
-    openrouter_models_vision: tuple[str, ...] = ("openrouter/free",)
+    openrouter_models_text: tuple[str, ...] = ("openrouter/auto",)
+    openrouter_models_vision: tuple[str, ...] = ("openrouter/auto",)
     openrouter_models_audio: tuple[str, ...] = ()
     ai_fallback_cooldown_seconds: int = 300
     google_sheet_id: str = ""
@@ -47,8 +47,8 @@ class Settings:
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
             openrouter_api_key=os.getenv("OPENROUTER_API_KEY", ""),
             openrouter_base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-            openrouter_models_text=_env_model_list("OPENROUTER_MODELS_TEXT", default=("openrouter/free",)),
-            openrouter_models_vision=_env_model_list("OPENROUTER_MODELS_VISION", default=("openrouter/free",)),
+            openrouter_models_text=_env_model_list("OPENROUTER_MODELS_TEXT", default=("openrouter/auto",)),
+            openrouter_models_vision=_env_model_list("OPENROUTER_MODELS_VISION", default=("openrouter/auto",)),
             openrouter_models_audio=_env_model_list("OPENROUTER_MODELS_AUDIO"),
             ai_fallback_cooldown_seconds=int(os.getenv("AI_FALLBACK_COOLDOWN_SECONDS", "300")),
             google_sheet_id=os.getenv("GOOGLE_SHEET_ID", ""),

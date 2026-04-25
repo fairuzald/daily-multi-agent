@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from bot_platform.bots.finance.domain.extraction import FinanceMessageExtraction
 from bot_platform.bots.finance.domain.multi_transaction import detect_multi_transaction
 from bot_platform.bots.finance.domain.policies import FinanceBotPolicy
 from bot_platform.bots.finance.domain.responses import BotResponse, ReplyContextInput
@@ -57,15 +58,39 @@ class MessageEntryService:
         if setup_mode:
             return self._handle_setup_mode(chat_id, message_text, setup_mode)
 
-        parsed_command = self.runtime.command_parser.parse(message_text)
-        if parsed_command.intent:
-            return self.command_service.handle_command(chat_id, message_text, parsed_command, reply_context, message_datetime)
-
-        pending_result = self._handle_reply_state(chat_id, message_text, reply_context)
+        pending_result = self._handle_pending_reply_state(chat_id, message_text, reply_context)
         if pending_result is not None:
             return pending_result
 
-        multi_candidate = detect_multi_transaction(message_text)
+        matched_reply_context = self.guards.matched_reply_context(chat_id, reply_context)
+        pending = self.runtime.state_store.get_pending(chat_id)
+        extraction = self.runtime.ai_client.extract_message(
+            message_text,
+            reply_context_kind=matched_reply_context.kind if matched_reply_context else "",
+            reply_context_text=reply_context.message_text if reply_context else "",
+            pending_kind=pending.kind if pending else "",
+            message_datetime_iso=message_datetime.isoformat() if message_datetime else "",
+        )
+        if extraction.intent == "clarify":
+            clarification = extraction.clarification_message.strip() or "Aku masih belum yakin maksudmu apa. Coba jelaskan lagi dengan bahasa yang lebih spesifik."
+            return BotResponse(clarification)
+        parsed_command = extraction.to_command(message_text)
+        if parsed_command.intent:
+            return self.command_service.handle_command(chat_id, message_text, parsed_command, reply_context, message_datetime)
+
+        if extraction.intent == "unknown":
+            fallback_command = self.runtime.command_parser.parse(message_text)
+            if fallback_command.intent:
+                return self.command_service.handle_command(chat_id, message_text, fallback_command, reply_context, message_datetime)
+
+        reply_result = self._handle_non_pending_reply_state(chat_id, message_text, matched_reply_context)
+        if reply_result is not None:
+            return reply_result
+
+        contextual_text = self._contextual_text(message_text, reply_context)
+        multi_candidate = extraction.to_multi_candidate(contextual_text)
+        if multi_candidate is None:
+            multi_candidate = detect_multi_transaction(contextual_text)
         if multi_candidate is not None:
             return self.grouped_service.handle_multi_transaction(
                 chat_id,
@@ -74,8 +99,10 @@ class MessageEntryService:
                 message_datetime=message_datetime,
             )
 
-        parsed = self.runtime.ai_client.parse_transaction(message_text)
-        parsed = self.queries.apply_deterministic_enrichment(parsed, message_text, message_datetime)
+        parsed = next((item for item in extraction.items if item.type is not None or item.amount is not None), None)
+        if parsed is None:
+            parsed = self.runtime.ai_client.parse_transaction(message_text)
+        parsed = self.queries.apply_deterministic_enrichment(parsed, contextual_text, message_datetime)
         return self._handle_parsed_transaction(chat_id, parsed, InputMode.TEXT)
 
     def handle_voice_transcript(
@@ -90,13 +117,34 @@ class MessageEntryService:
         if guard_error:
             return guard_error
 
-        pending_result = self._handle_reply_state(chat_id, transcript, reply_context)
+        pending_result = self._handle_pending_reply_state(chat_id, transcript, reply_context)
         if pending_result is not None:
             return pending_result
 
-        multi_candidate = self.runtime.ai_client.extract_multi_transaction(transcript)
+        matched_reply_context = self.guards.matched_reply_context(chat_id, reply_context)
+        pending = self.runtime.state_store.get_pending(chat_id)
+        extraction = self.runtime.ai_client.extract_message(
+            transcript,
+            reply_context_kind=matched_reply_context.kind if matched_reply_context else "",
+            reply_context_text=reply_context.message_text if reply_context else "",
+            pending_kind=pending.kind if pending else "",
+            message_datetime_iso=message_datetime.isoformat() if message_datetime else "",
+        )
+        if extraction.intent == "clarify":
+            clarification = extraction.clarification_message.strip() or "Aku masih belum yakin maksud voice note itu. Coba kirim ulang dengan kalimat yang lebih jelas."
+            return BotResponse(clarification)
+        parsed_command = extraction.to_command(transcript)
+        if parsed_command.intent:
+            return self.command_service.handle_command(chat_id, transcript, parsed_command, reply_context, message_datetime)
+
+        reply_result = self._handle_non_pending_reply_state(chat_id, transcript, matched_reply_context)
+        if reply_result is not None:
+            return reply_result
+
+        contextual_text = self._contextual_text(transcript, reply_context)
+        multi_candidate = extraction.to_multi_candidate(contextual_text)
         if multi_candidate is None:
-            multi_candidate = detect_multi_transaction(transcript)
+            multi_candidate = detect_multi_transaction(contextual_text)
         if multi_candidate is not None:
             return self.grouped_service.handle_multi_transaction(
                 chat_id,
@@ -105,15 +153,17 @@ class MessageEntryService:
                 message_datetime=message_datetime,
             )
 
-        parsed = self.runtime.ai_client.parse_transaction(transcript)
-        parsed = self.queries.apply_deterministic_enrichment(parsed, transcript, message_datetime)
+        parsed = next((item for item in extraction.items if item.type is not None or item.amount is not None), None)
+        if parsed is None:
+            parsed = self.runtime.ai_client.parse_transaction(transcript)
+        parsed = self.queries.apply_deterministic_enrichment(parsed, contextual_text, message_datetime)
         return self._handle_parsed_transaction(chat_id, parsed, InputMode.VOICE)
 
     def handle_image_message(
         self,
         user_id: int,
         chat_id: int,
-        parsed: ParsedTransaction,
+        extraction: FinanceMessageExtraction,
         reply_context: ReplyContextInput | None = None,
         message_datetime: datetime | None = None,
     ) -> BotResponse:
@@ -121,14 +171,14 @@ class MessageEntryService:
         if guard_error:
             return guard_error
 
-        pending_result = self._handle_reply_state(chat_id, parsed.raw_input, reply_context)
+        raw_input = next((item.raw_input for item in extraction.items if item.raw_input.strip()), "") or "image transaction proof"
+        pending_result = self._handle_pending_reply_state(chat_id, raw_input, reply_context)
         if pending_result is not None:
             return pending_result
 
-        multi_source_text = parsed.raw_input or parsed.description
-        multi_candidate = self.runtime.ai_client.extract_multi_transaction(multi_source_text)
+        multi_candidate = extraction.to_multi_candidate(raw_input)
         if multi_candidate is None:
-            multi_candidate = detect_multi_transaction(multi_source_text)
+            multi_candidate = detect_multi_transaction(self._contextual_text(raw_input, reply_context))
         if multi_candidate is not None:
             return self.grouped_service.handle_multi_transaction(
                 chat_id,
@@ -137,10 +187,13 @@ class MessageEntryService:
                 message_datetime=message_datetime,
             )
 
-        parsed = self.queries.apply_deterministic_enrichment(parsed, parsed.raw_input, message_datetime)
+        parsed = next((item for item in extraction.items if item.type is not None or item.amount is not None), None)
+        if parsed is None:
+            return BotResponse(extraction.clarification_message.strip() or "Aku belum bisa memahami isi gambar itu dengan cukup yakin. Coba kirim gambar yang lebih jelas atau tambahkan caption.")
+        parsed = self.queries.apply_deterministic_enrichment(parsed, self._contextual_text(parsed.raw_input or raw_input, reply_context), message_datetime)
         return self._handle_parsed_transaction(chat_id, parsed, InputMode.IMAGE)
 
-    def _handle_reply_state(
+    def _handle_pending_reply_state(
         self,
         chat_id: int,
         message_text: str,
@@ -158,6 +211,14 @@ class MessageEntryService:
             return self.pending_service.handle_pending_confirmation(chat_id, message_text, pending)
         if pending is None and matched_reply_context and matched_reply_context.kind == "confirmation":
             return BotResponse("That confirmation context has expired. Please resend the transaction or reply to a newer bot message.")
+        return None
+
+    def _handle_non_pending_reply_state(
+        self,
+        chat_id: int,
+        message_text: str,
+        matched_reply_context,
+    ) -> BotResponse | None:
         if matched_reply_context and matched_reply_context.kind == "saved":
             return self.pending_service.handle_saved_reply(chat_id, message_text, matched_reply_context)
         if matched_reply_context and matched_reply_context.kind == "summary":
@@ -166,6 +227,13 @@ class MessageEntryService:
                 "Reply to a saved transaction message to correct it, or use /month MM-YYYY for another month."
             )
         return None
+
+    @staticmethod
+    def _contextual_text(message_text: str, reply_context: ReplyContextInput | None) -> str:
+        reply_text = (reply_context.message_text if reply_context else "").strip()
+        if not reply_text:
+            return message_text
+        return f"{reply_text}\n{message_text}".strip()
 
     def _handle_parsed_transaction(
         self,

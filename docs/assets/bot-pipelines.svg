@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1180" viewBox="0 0 1600 1180" role="img" aria-labelledby="title desc">
+  <title id="title">Finance and Life Bot Pipelines</title>
+  <desc id="desc">Architecture diagram showing the high-level request pipeline for the finance bot and life bot.</desc>
+  <style>
+    .bg { fill: #f7f7f2; }
+    .panel { fill: #fffdf8; stroke: #1f2937; stroke-width: 2; rx: 18; ry: 18; }
+    .title { font: 700 30px Arial, sans-serif; fill: #111827; }
+    .subtitle { font: 700 22px Arial, sans-serif; fill: #111827; }
+    .text { font: 16px Arial, sans-serif; fill: #111827; }
+    .small { font: 14px Arial, sans-serif; fill: #374151; }
+    .node { fill: #ffffff; stroke: #0f172a; stroke-width: 1.5; rx: 12; ry: 12; }
+    .decision { fill: #fff7ed; stroke: #9a3412; stroke-width: 1.5; }
+    .finance { fill: #eff6ff; }
+    .life { fill: #ecfdf5; }
+    .clarify { fill: #fef3c7; }
+    .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="1180"/>
+  <text class="title" x="800" y="52" text-anchor="middle">Finance and Life Bot Pipelines</text>
+  <text class="small" x="800" y="78" text-anchor="middle">Current high-level processing flow for each Telegram bot</text>
+
+  <rect class="panel" x="60" y="110" width="700" height="1000"/>
+  <text class="subtitle" x="410" y="150" text-anchor="middle">Finance Bot</text>
+
+  <rect class="node finance" x="260" y="180" width="300" height="48"/>
+  <text class="text" x="410" y="210" text-anchor="middle">Telegram Controller</text>
+
+  <rect class="node finance" x="100" y="260" width="230" height="54"/>
+  <text class="text" x="215" y="292" text-anchor="middle">Voice Transcription</text>
+
+  <rect class="node finance" x="360" y="260" width="250" height="54"/>
+  <text class="text" x="485" y="292" text-anchor="middle">Image Parser</text>
+
+  <rect class="node finance" x="260" y="350" width="300" height="56"/>
+  <text class="text" x="410" y="383" text-anchor="middle">Message Entry Service</text>
+
+  <rect class="node finance" x="260" y="440" width="300" height="56"/>
+  <text class="text" x="410" y="473" text-anchor="middle">Pending or Reply State Check</text>
+
+  <rect class="node finance" x="260" y="530" width="300" height="56"/>
+  <text class="text" x="410" y="563" text-anchor="middle">AI Intent Interpreter</text>
+
+  <polygon class="decision" points="410,620 540,690 410,760 280,690"/>
+  <text class="text" x="410" y="686" text-anchor="middle">Intent Type</text>
+
+  <rect class="node finance" x="70" y="810" width="220" height="72"/>
+  <text class="text" x="180" y="845" text-anchor="middle">Command Service</text>
+  <text class="small" x="180" y="865" text-anchor="middle">edit, delete, summary, compare, read, budget</text>
+
+  <rect class="node finance" x="350" y="810" width="240" height="60"/>
+  <text class="text" x="470" y="845" text-anchor="middle">Multi Transaction Detection</text>
+
+  <rect class="node finance" x="350" y="900" width="240" height="60"/>
+  <text class="text" x="470" y="936" text-anchor="middle">Transaction Parser</text>
+
+  <rect class="node finance" x="350" y="990" width="240" height="60"/>
+  <text class="text" x="470" y="1026" text-anchor="middle">Deterministic Enrichment</text>
+
+  <rect class="node finance" x="350" y="1080" width="240" height="60"/>
+  <text class="text" x="470" y="1116" text-anchor="middle">Policy Validation</text>
+
+  <polygon class="decision" points="650,995 735,1045 650,1095 565,1045"/>
+  <text class="text" x="650" y="1041" text-anchor="middle">Clarify?</text>
+
+  <rect class="node clarify" x="620" y="830" width="170" height="60"/>
+  <text class="text" x="705" y="866" text-anchor="middle">Human</text>
+  <text class="text" x="705" y="886" text-anchor="middle">Clarification</text>
+
+  <rect class="node finance" x="620" y="915" width="170" height="60"/>
+  <text class="text" x="705" y="951" text-anchor="middle">Pending State Store</text>
+
+  <rect class="node finance" x="620" y="1080" width="170" height="60"/>
+  <text class="text" x="705" y="1116" text-anchor="middle">Persistence</text>
+
+  <rect class="node finance" x="620" y="1165" width="170" height="60" transform="translate(0,-130)"/>
+  <text class="text" x="705" y="1071" text-anchor="middle">Google Sheets</text>
+
+  <rect class="node finance" x="620" y="1165" width="170" height="60" transform="translate(0,-45)"/>
+  <text class="text" x="705" y="1156" text-anchor="middle">Human Confirmation</text>
+  <text class="text" x="705" y="1176" text-anchor="middle">or Summary</text>
+
+  <rect class="panel" x="840" y="110" width="700" height="1000"/>
+  <text class="subtitle" x="1190" y="150" text-anchor="middle">Life Bot</text>
+
+  <rect class="node life" x="1040" y="180" width="300" height="48"/>
+  <text class="text" x="1190" y="210" text-anchor="middle">Telegram Controller</text>
+
+  <rect class="node life" x="1040" y="260" width="300" height="54"/>
+  <text class="text" x="1190" y="292" text-anchor="middle">Voice Transcription</text>
+
+  <rect class="node life" x="1040" y="350" width="300" height="56"/>
+  <text class="text" x="1190" y="383" text-anchor="middle">Message Service</text>
+
+  <rect class="node life" x="1040" y="440" width="300" height="56"/>
+  <text class="text" x="1190" y="473" text-anchor="middle">Pending or Reply State Check</text>
+
+  <rect class="node life" x="1040" y="530" width="300" height="56"/>
+  <text class="text" x="1190" y="563" text-anchor="middle">Inline Actions</text>
+  <text class="small" x="1190" y="583" text-anchor="middle">done, snooze, cancel, view, edit</text>
+
+  <rect class="node life" x="1040" y="640" width="300" height="56"/>
+  <text class="text" x="1190" y="673" text-anchor="middle">Life Parser</text>
+
+  <polygon class="decision" points="1190,735 1315,805 1190,875 1065,805"/>
+  <text class="text" x="1190" y="800" text-anchor="middle">Confirm or Rewrite?</text>
+
+  <rect class="node clarify" x="950" y="930" width="170" height="60"/>
+  <text class="text" x="1035" y="966" text-anchor="middle">Human</text>
+  <text class="text" x="1035" y="986" text-anchor="middle">Clarification</text>
+
+  <rect class="node life" x="1140" y="930" width="170" height="60"/>
+  <text class="text" x="1225" y="966" text-anchor="middle">Pending State Store</text>
+
+  <rect class="node life" x="1295" y="930" width="170" height="60"/>
+  <text class="text" x="1380" y="966" text-anchor="middle">Item Service</text>
+
+  <rect class="node life" x="1295" y="1025" width="170" height="60"/>
+  <text class="text" x="1380" y="1061" text-anchor="middle">Repository</text>
+
+  <rect class="node life" x="1110" y="1025" width="170" height="60"/>
+  <text class="text" x="1195" y="1061" text-anchor="middle">Calendar Sync</text>
+
+  <rect class="node life" x="1295" y="1120" width="170" height="60"/>
+  <text class="text" x="1380" y="1156" text-anchor="middle">Human Result</text>
+
+  <path class="arrow" d="M410 228 L410 350"/>
+  <path class="arrow" d="M215 314 L215 332 L410 332 L410 350"/>
+  <path class="arrow" d="M485 314 L485 332 L410 332 L410 350"/>
+  <path class="arrow" d="M410 406 L410 440"/>
+  <path class="arrow" d="M410 496 L410 530"/>
+  <path class="arrow" d="M410 586 L410 620"/>
+  <path class="arrow" d="M320 710 L180 810"/>
+  <path class="arrow" d="M410 760 L470 810"/>
+  <path class="arrow" d="M470 870 L470 900"/>
+  <path class="arrow" d="M470 960 L470 990"/>
+  <path class="arrow" d="M470 1050 L470 1080"/>
+  <path class="arrow" d="M590 1110 L620 1110"/>
+  <path class="arrow" d="M565 1045 L620 945"/>
+  <path class="arrow" d="M705 975 L705 890"/>
+  <path class="arrow" d="M790 1110 L820 1110"/>
+  <path class="arrow" d="M790 1110"/>
+  <path class="arrow" d="M705 1140 L705 1035"/>
+
+  <path class="arrow" d="M1190 228 L1190 260"/>
+  <path class="arrow" d="M1190 314 L1190 350"/>
+  <path class="arrow" d="M1190 406 L1190 440"/>
+  <path class="arrow" d="M1190 496 L1190 530"/>
+  <path class="arrow" d="M1190 586 L1190 640"/>
+  <path class="arrow" d="M1190 696 L1190 735"/>
+  <path class="arrow" d="M1125 845 L1035 930"/>
+  <path class="arrow" d="M1190 875 L1225 930"/>
+  <path class="arrow" d="M1255 845 L1380 930"/>
+  <path class="arrow" d="M1380 990 L1380 1025"/>
+  <path class="arrow" d="M1295 1025 L1195 1025"/>
+  <path class="arrow" d="M1380 1085 L1380 1120"/>
+  <path class="arrow" d="M1190 586 L1380 1120"/>
+</svg>

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
-
 import httpx
+import json
 from typing import Any, Callable, TypeVar
 
 from bot_platform.shared.ai.gemini_base import BaseGeminiClient
@@ -88,6 +87,39 @@ class BaseOpenRouterClient:
             return payload_normalizer(payload)
 
         return self._run_model_pool(capability, models, operation)
+
+    def transcribe_voice_note(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
+        if not audio_bytes:
+            raise ValueError("audio payload is empty")
+
+        def operation(model: str) -> str:
+            response = self._chat_completion(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": BaseGeminiClient.TRANSCRIBE_VOICE_NOTE_PROMPT,
+                            },
+                            {
+                                "type": "input_audio",
+                                "input_audio": {
+                                    "data": self._base64_ascii(audio_bytes),
+                                    "format": self._audio_format(mime_type),
+                                },
+                            },
+                        ],
+                    }
+                ],
+            )
+            transcript = self._extract_message_text(response).strip()
+            if not transcript:
+                raise ValueError("OpenRouter returned an empty transcription")
+            return transcript
+
+        return self._run_model_pool("audio", self.audio_models, operation)
 
     @staticmethod
     def _format_http_error(response: httpx.Response) -> str:
@@ -217,3 +249,9 @@ class BaseOpenRouterClient:
         if subtype == "x-wav":
             return "wav"
         return subtype
+
+    @staticmethod
+    def _base64_ascii(payload: bytes) -> str:
+        import base64
+
+        return base64.b64encode(payload).decode("ascii")

@@ -22,6 +22,17 @@ from bot_platform.bots.life.interfaces.telegram.controller import LifeTelegramCo
 from bot_platform.shared.config.settings import Settings
 
 
+def _select_primary_and_fallback(
+    primary_provider: str,
+    *,
+    gemini_client,
+    openrouter_client,
+):
+    if primary_provider == "openrouter":
+        return openrouter_client, gemini_client
+    return gemini_client, openrouter_client
+
+
 def build_finance_bot_service(settings: Settings) -> FinanceBotService:
     gemini_client = GeminiClient(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
     openrouter_client = None
@@ -33,12 +44,11 @@ def build_finance_bot_service(settings: Settings) -> FinanceBotService:
             audio_models=settings.openrouter_models_audio,
             base_url=settings.openrouter_base_url,
         )
-    if settings.primary_ai_provider == "openrouter":
-        primary_client = openrouter_client
-        fallback_client = gemini_client
-    else:
-        primary_client = gemini_client
-        fallback_client = openrouter_client
+    primary_client, fallback_client = _select_primary_and_fallback(
+        settings.primary_ai_provider,
+        gemini_client=gemini_client,
+        openrouter_client=openrouter_client,
+    )
     if primary_client is None:
         raise RuntimeError(f"Primary AI provider `{settings.primary_ai_provider}` is not configured.")
     ai_client = RotatingAIClient(
@@ -119,12 +129,11 @@ def build_life_bot_service(settings: Settings) -> LifeBotService:
             audio_models=settings.openrouter_models_audio,
             base_url=settings.openrouter_base_url,
         )
-    if settings.primary_ai_provider == "openrouter":
-        primary_client = openrouter_client
-        fallback_client = gemini_client
-    else:
-        primary_client = gemini_client
-        fallback_client = openrouter_client
+    primary_client, fallback_client = _select_primary_and_fallback(
+        settings.primary_ai_provider,
+        gemini_client=gemini_client,
+        openrouter_client=openrouter_client,
+    )
     ai_client = None
     if primary_client is not None:
         ai_client = RotatingLifeAIClient(

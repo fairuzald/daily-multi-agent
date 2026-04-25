@@ -62,6 +62,7 @@ class GroupedTransactionService:
             forced_shared_total=False,
             item_amounts=candidate.item_amounts,
             shared_payload=candidate.shared_payload,
+            parsed_items=candidate.parsed_items,
         )
 
     def handle_group_pending_confirmation(
@@ -85,6 +86,7 @@ class GroupedTransactionService:
                 forced_shared_total=True,
                 item_amounts=pending.item_amounts,
                 shared_payload=pending.shared_payload,
+                parsed_items=None,
             )
 
         allocations = parse_group_allocation_reply(
@@ -121,6 +123,7 @@ class GroupedTransactionService:
             forced_shared_total=False,
             item_amounts=pending.item_amounts,
             shared_payload=pending.shared_payload,
+            parsed_items=None,
         )
 
     def save_group_transactions(
@@ -137,6 +140,7 @@ class GroupedTransactionService:
         forced_shared_total: bool,
         item_amounts: list[int | None] | None,
         shared_payload: dict | None,
+        parsed_items: list[ParsedTransaction] | None,
     ) -> BotResponse:
         if forced_shared_total:
             transactions = self._build_forced_shared_total_transactions(
@@ -159,6 +163,7 @@ class GroupedTransactionService:
                 shared_total_amount=shared_total_amount,
                 item_amounts=item_amounts,
                 shared_payload=shared_payload,
+                parsed_items=parsed_items,
             )
             if transactions is None:
                 return BotResponse(
@@ -181,8 +186,19 @@ class GroupedTransactionService:
         shared_total_amount: int | None,
         item_amounts: list[int | None] | None,
         shared_payload: dict | None,
+        parsed_items: list[ParsedTransaction] | None,
     ):
         resolved_allocations = allocations or [int(amount or 0) for amount in (item_amounts or [])]
+        if parsed_items and len(parsed_items) == len(item_inputs):
+            return self._build_direct_group_transactions_from_parsed_items(
+                chat_id=chat_id,
+                parsed_items=parsed_items,
+                raw_input=raw_input,
+                input_mode=input_mode,
+                message_datetime=message_datetime,
+                allocations=resolved_allocations if resolved_allocations else None,
+                shared_total_amount=shared_total_amount,
+            )
         if shared_payload is not None and resolved_allocations and len(resolved_allocations) == len(item_inputs):
             return self._build_direct_group_transactions_from_shared_payload(
                 chat_id=chat_id,
@@ -221,6 +237,38 @@ class GroupedTransactionService:
                 for transaction in transactions
             ]
         return transactions
+
+    def _build_direct_group_transactions_from_parsed_items(
+        self,
+        *,
+        chat_id: int,
+        parsed_items: list[ParsedTransaction],
+        raw_input: str,
+        input_mode: InputMode,
+        message_datetime: datetime | None,
+        allocations: list[int] | None,
+        shared_total_amount: int | None,
+    ) -> list | None:
+        transactions = []
+        group_id = f"group_{chat_id}_{abs(hash((raw_input, tuple(item.raw_input for item in parsed_items))))}"
+        for index, parsed_item in enumerate(parsed_items):
+            parsed = self.queries.apply_deterministic_enrichment(parsed_item, parsed_item.raw_input or raw_input, message_datetime)
+            parsed = parsed.model_copy(
+                update={
+                    "amount": allocations[index] if allocations is not None else parsed.amount,
+                    "raw_input": raw_input,
+                }
+            )
+            parsed = FinanceBotPolicy.prepare_for_save(parsed)
+            if parsed.confidence < self.runtime.low_confidence_threshold or parsed.missing_fields:
+                return None
+            transactions.append(
+                parsed.to_transaction_record(input_mode=input_mode).model_copy(
+                    update={"group_id": group_id, "group_total_amount": shared_total_amount}
+                )
+            )
+        resolved_group_total = shared_total_amount or sum(item.amount for item in transactions)
+        return [transaction.model_copy(update={"group_total_amount": resolved_group_total}) for transaction in transactions]
 
     def _build_direct_group_transactions_from_shared_payload(
         self,

@@ -10,6 +10,7 @@ Private Telegram life admin bot for:
 ## Product Capabilities
 
 - AI-first natural-language parsing
+- one unified extraction prompt for new messages and rewrites
 - one message can create multiple items
 - voice note support through transcription
 - reply-based actions on saved items

@@ -6,9 +6,18 @@ from google.genai import types
 
 
 class BaseGeminiClient:
+    TRANSCRIBE_VOICE_NOTE_PROMPT = (
+        "Transcribe this Indonesian Telegram voice note. "
+        "Return only the spoken transcript text without Markdown or explanation."
+    )
+
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash") -> None:
         self.api_key = api_key
         self.model_name = model_name
+
+    @staticmethod
+    def prompt_dir(module_file: str) -> Path:
+        return Path(module_file).resolve().parent.parent / "prompts"
 
     @staticmethod
     def load_prompt(prompt_dir: Path, file_name: str) -> str:
@@ -39,12 +48,7 @@ class BaseGeminiClient:
         response = client.models.generate_content(
             model=self.model_name,
             contents=[
-                types.Part.from_text(
-                    text=(
-                        "Transcribe this Indonesian Telegram voice note. "
-                        "Return only the spoken transcript text without Markdown or explanation."
-                    )
-                ),
+                types.Part.from_text(text=self.TRANSCRIBE_VOICE_NOTE_PROMPT),
                 types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
             ],
         )

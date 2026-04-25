@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from bot_platform.bots.life.domain.models import LifeItem
 
@@ -100,9 +101,20 @@ class GoogleCalendarGateway:
                 "monthly": "RRULE:FREQ=MONTHLY",
                 "yearly": "RRULE:FREQ=YEARLY",
             }
+            recurrence_rule = ""
             if item.recurrence.startswith("weekday:"):
                 day = item.recurrence.split(":", 1)[1][:2].upper()
-                payload["recurrence"] = [f"RRULE:FREQ=WEEKLY;BYDAY={day}"]
+                recurrence_rule = f"RRULE:FREQ=WEEKLY;BYDAY={day}"
             elif item.recurrence in recurrence_map:
-                payload["recurrence"] = [recurrence_map[item.recurrence]]
+                recurrence_rule = recurrence_map[item.recurrence]
+            if recurrence_rule:
+                if item.recurrence_until is not None:
+                    until_local = datetime.combine(
+                        item.recurrence_until,
+                        time(23, 59, 59),
+                        tzinfo=ZoneInfo(self.timezone_name),
+                    )
+                    until_utc = until_local.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+                    recurrence_rule = f"{recurrence_rule};UNTIL={until_utc}"
+                payload["recurrence"] = [recurrence_rule]
         return payload

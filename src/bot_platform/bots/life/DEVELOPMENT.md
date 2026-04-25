@@ -13,7 +13,7 @@
 
 The life bot is AI-first:
 
-- AI tries to extract one or more items
+- AI uses one unified extractor prompt to interpret one or more items, including rewrites
 - if output is safe, items are saved immediately
 - if output is unsafe or providers fail, the bot stores a pending rewrite state
 - the user can reply naturally with a clearer sentence

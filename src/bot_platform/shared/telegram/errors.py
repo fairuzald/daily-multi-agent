@@ -3,6 +3,11 @@ from __future__ import annotations
 import re
 
 import httpx
+from bot_platform.shared.ai.error_catalog import (
+    GEMINI_PROVIDER_TOKENS,
+    PROVIDER_PASSTHROUGH_ERROR_TOKENS,
+    STRUCTURED_OUTPUT_ERROR_TOKENS,
+)
 
 
 def humanize_processing_error_text(exc: Exception, *, source: str) -> str:
@@ -27,21 +32,10 @@ def humanize_processing_error_text(exc: Exception, *, source: str) -> str:
         body = (exc.response.text or "").strip()
         return f"HTTP error {status}: {body or error_text}"
 
-    if any(
-        token in lowered
-        for token in (
-            "openrouter error",
-            "openrouter failed",
-            "gemini",
-            "generativelanguage.googleapis.com",
-            "upstream",
-            "api error",
-            "payment required",
-            "not found",
-            "not configured for the life bot",
-            "not configured for the finance bot",
-        )
-    ):
+    if any(token in lowered for token in STRUCTURED_OUTPUT_ERROR_TOKENS):
+        return error_text
+
+    if any(token in lowered for token in PROVIDER_PASSTHROUGH_ERROR_TOKENS):
         return error_text
 
     return f"I couldn't process that {source} safely right now. Please try again or send a simpler version."
@@ -51,15 +45,7 @@ def _humanize_provider_error(error_text: str, lowered: str) -> str | None:
     if "openrouter error" in lowered or "openrouter failed" in lowered:
         return error_text
 
-    gemini_like = any(
-        token in lowered
-        for token in (
-            "gemini",
-            "generativelanguage.googleapis.com",
-            "resource_exhausted",
-            "quota exceeded",
-        )
-    )
+    gemini_like = any(token in lowered for token in GEMINI_PROVIDER_TOKENS)
     if gemini_like:
         retry_seconds = _extract_retry_seconds(error_text)
         model_match = re.search(r"model:\s*([a-zA-Z0-9._:-]+)", error_text, flags=re.IGNORECASE)

@@ -24,7 +24,86 @@ Main product flow:
 
 Docs:
 
-- Product: [src/bot_platform/bots/finance/README.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/finance/README.md)
+- Product: [src/bot_platform/bots/finance/README.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/finance/README.md)flowchart TD
+  U[Telegram User]
+
+  subgraph Finance Bot
+  F1[Telegram Controller]
+  F2[Voice Transcription]
+  F3[Message Entry Service]
+  F4[Pending or Reply State Check]
+  F5[AI Intent Interpreter]
+  F6{Intent Type}
+  F7[Command Service]
+  F8[Multi Transaction Detection]
+  F9[Transaction Parser]
+  F10[Image Parser]
+  F11[Deterministic Enrichment]
+  F12[Policy Validation]
+  F13{Clarify?}
+  F14[Pending State Store]
+  F15[Human Clarification]
+  F16[Persistence]
+  F17[Google Sheets]
+  F18[Human Confirmation or Summary]
+  end
+
+  subgraph Life Bot
+  L1[Telegram Controller]
+  L2[Voice Transcription]
+  L3[Message Service]
+  L4[Pending or Reply State Check]
+  L5[Inline Actions]
+  L6[Life Parser]
+  L7{Confirm or Rewrite?}
+  L8[Pending State Store]
+  L9[Human Clarification]
+  L10[Item Service]
+  L11[Repository]
+  L12[Google Calendar Sync]
+  L13[Human Result]
+  end
+
+  U --> F1
+  F1 -->|voice| F2
+  F1 -->|text| F3
+  F2 --> F3
+  F3 --> F4
+  F4 --> F5
+  F5 --> F6
+  F6 -->|action| F7
+  F6 -->|transaction| F8
+  F6 -->|clarify| F15
+  F8 -->|grouped| F11
+  F8 -->|single| F9
+  F1 -->|image| F10
+  F9 --> F11
+  F10 --> F11
+  F11 --> F12
+  F12 --> F13
+  F13 -->|yes| F14
+  F14 --> F15
+  F13 -->|no| F16
+  F16 --> F17
+  F16 --> F18
+  F7 --> F18
+
+  U --> L1
+  L1 -->|voice| L2
+  L1 -->|text| L3
+  L2 --> L3
+  L3 --> L4
+  L4 --> L5
+  L5 -->|handled| L13
+  L5 -->|not handled| L6
+  L6 --> L7
+  L7 -->|yes| L8
+  L8 --> L9
+  L7 -->|no| L10
+  L10 --> L11
+  L10 --> L12
+  L10 --> L13
+
 - Setup: [src/bot_platform/bots/finance/SETUP.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/finance/SETUP.md)
 - Development: [src/bot_platform/bots/finance/DEVELOPMENT.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/finance/DEVELOPMENT.md)
 

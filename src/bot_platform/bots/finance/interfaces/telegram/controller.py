@@ -27,9 +27,15 @@ class TelegramBotController:
             return ReplyContextInput()
         reply_to_message = update.message.reply_to_message
         from_user = reply_to_message.from_user
+        reply_text = (
+            reply_to_message.text
+            or reply_to_message.caption
+            or ""
+        ).strip()
         return ReplyContextInput(
             message_id=reply_to_message.message_id,
             is_bot_reply=bool(from_user and from_user.is_bot),
+            message_text=reply_text,
         )
 
     async def send_bot_response(
@@ -338,6 +344,8 @@ class TelegramBotController:
         if not update.message or not update.message.voice:
             return
         try:
+            if self.bot_service.ai_client is None:
+                raise RuntimeError("Voice note support is not configured for the finance bot.")
             telegram_file = await context.bot.get_file(update.message.voice.file_id)
             audio_bytes = bytes(await telegram_file.download_as_bytearray())
             mime_type = update.message.voice.mime_type or "audio/ogg"
@@ -358,6 +366,8 @@ class TelegramBotController:
         if not update.message:
             return
         try:
+            if self.bot_service.ai_client is None:
+                raise RuntimeError("Image parsing is not configured for the finance bot.")
             telegram_file = None
             mime_type = "image/jpeg"
             caption = update.message.caption or ""
@@ -372,15 +382,17 @@ class TelegramBotController:
                 return
 
             image_bytes = bytes(await telegram_file.download_as_bytearray())
-            parsed = self.bot_service.ai_client.parse_transaction_image(
+            extraction = self.bot_service.ai_client.extract_message(
+                caption.strip() or "image transaction proof",
                 image_bytes=image_bytes,
                 mime_type=mime_type,
                 caption=caption,
+                message_datetime_iso=update.message.date.isoformat() if update.message.date else "",
             )
             reply = self.bot_service.handle_image_message(
                 user_id=update.effective_user.id,
                 chat_id=update.effective_chat.id,
-                parsed=parsed,
+                extraction=extraction,
                 reply_context=self.reply_context_input(update),
                 message_datetime=update.message.date,
             )

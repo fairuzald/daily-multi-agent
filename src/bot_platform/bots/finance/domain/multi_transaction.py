@@ -4,6 +4,9 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from bot_platform.bots.finance.domain.amounts import parse_amount_expression
+from bot_platform.bots.finance.models import ParsedTransaction
+
 
 @dataclass(frozen=True)
 class MultiTransactionCandidate:
@@ -14,6 +17,7 @@ class MultiTransactionCandidate:
     shared_total_amount: int | None = None
     item_amounts: list[int | None] = field(default_factory=list)
     shared_payload: dict[str, Any] | None = None
+    parsed_items: list[ParsedTransaction] = field(default_factory=list)
 
 
 def detect_multi_transaction(raw_text: str) -> MultiTransactionCandidate | None:
@@ -145,7 +149,7 @@ def _extract_trailing_payment_phrase(text: str) -> tuple[str, str]:
 
 def _extract_leading_date_phrase(text: str) -> str:
     match = re.match(
-        r"^\s*((?:hari ini|kemarin|barusan|tadi|\d{4}-\d{2}-\d{2}|[0-9]+\s+hari\s+lalu))\b[:, ]*",
+        r"^\s*((?:hari ini|kemarin|kemaren|barusan|tadi|\d{4}-\d{2}-\d{2}|(?:[0-9]+|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s+hari\s+(?:yang\s+|yg\s+)?lalu))\b[:, ]*",
         text,
         flags=re.IGNORECASE,
     )
@@ -219,16 +223,7 @@ def _strip_leading_context(text: str, *, date_phrase: str, verb: str) -> str:
 
 
 def _parse_amount(text: str) -> int | None:
-    raw = text.strip().lower()
-    digits = "".join(char for char in raw if char.isdigit())
-    if not digits:
-        return None
-    value = int(digits)
-    if re.search(r"(?:\bk\b|\brb\b|ribu)", raw):
-        return value * 1_000
-    if re.search(r"(?:\bjt\b|juta)", raw):
-        return value * 1_000_000
-    return value
+    return parse_amount_expression(text)
 
 
 def _find_amount_tokens(text: str) -> list[str]:

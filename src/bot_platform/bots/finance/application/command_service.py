@@ -154,43 +154,61 @@ class CommandService:
         message_datetime: datetime | None,
     ) -> BotResponse:
         if command.intent == "delete":
+            if command.target == "reply" and (reply_context is None or not reply_context.is_bot_reply):
+                return BotResponse(
+                    "Balas pesan transaksi yang mau dihapus, lalu tulis `hapus ini` supaya aku tahu transaksi mana yang dimaksud."
+                )
             return self._handle_delete_command(chat_id, reply_context)
         if command.intent == "edit":
-            return self._handle_edit_command(chat_id, message_text, reply_context, message_datetime)
+            if command.target == "reply" and (reply_context is None or not reply_context.is_bot_reply):
+                return BotResponse(
+                    "Balas pesan transaksi yang mau diubah, lalu tulis `ubah ini jadi ...` biar aku tahu transaksi mana yang harus diedit."
+                )
+            correction_text = command.correction_text.strip()
+            if not correction_text:
+                return BotResponse(
+                    "Aku masih butuh detail perubahannya. Contohnya: `ubah ini jadi 35k pakai GoPay`, `ganti jadi makan siang 25rb`, atau `hapus ini`."
+                )
+            return self._handle_edit_command(chat_id, correction_text, reply_context, message_datetime)
         if command.intent == "read":
             return self._handle_read_command(message_text, message_datetime)
         if command.intent == "budget_set":
             return self._handle_budget_set(command)
         if command.intent == "budget_show":
             return self._handle_budget_show(command, message_datetime)
+        if command.intent == "summary":
+            return self._handle_natural_summary(command, message_datetime)
         if command.intent == "compare_month":
             return self._handle_compare_month(message_datetime)
-        return BotResponse("I could not understand that command.")
+        return BotResponse("Aku belum benar-benar paham maksudnya. Coba tulis lebih spesifik, misalnya transaksi baru, ubah transaksi, hapus, atau minta ringkasan.")
 
     def _handle_delete_command(self, chat_id: int, reply_context: ReplyContextInput | None) -> BotResponse:
         transaction = self.queries.resolve_transaction_target(chat_id, reply_context)
         if transaction is None:
-            return BotResponse("I could not find a transaction to delete. Reply to a saved message or delete the last one.")
+            return BotResponse(
+                "Aku belum ketemu transaksi yang mau dihapus. Coba balas pesan transaksi yang tersimpan, atau bilang kalau mau hapus transaksi terakhir."
+            )
         deleted_record = transaction.model_copy(update={"status": TransactionStatus.DELETED})
         self.guards.sheets_client().update_transaction(deleted_record)
         self.runtime.state_store.set_transaction_snapshot(deleted_record)
         self.runtime.state_store.set_last_transaction_id(chat_id, deleted_record.transaction_id)
         return BotResponse(
-            f"Deleted transaction {deleted_record.transaction_id}.",
+            "Sudah kuhapus transaksi itu.",
             reply_context=ReplyMessageContext(kind="saved", transaction_id=deleted_record.transaction_id),
         )
 
     def _handle_edit_command(
         self,
         chat_id: int,
-        message_text: str,
+        correction_input: str,
         reply_context: ReplyContextInput | None,
         message_datetime: datetime | None,
     ) -> BotResponse:
         transaction = self.queries.resolve_transaction_target(chat_id, reply_context)
         if transaction is None:
-            return BotResponse("I could not find a transaction to edit. Reply to a saved message or edit the last one.")
-        correction_input = message_text.split(maxsplit=1)[1] if len(message_text.split(maxsplit=1)) > 1 else message_text
+            return BotResponse(
+                "Aku belum ketemu transaksi yang mau diubah. Coba balas pesan transaksi yang tersimpan, atau bilang kalau mau ubah transaksi terakhir."
+            )
         corrected = self.runtime.ai_client.correct_transaction(original=transaction, correction_input=correction_input)
         corrected = self.queries.apply_deterministic_enrichment(corrected, correction_input, message_datetime)
         corrected = FinanceBotPolicy.prepare_for_save(corrected)
@@ -201,28 +219,40 @@ class CommandService:
             update={"transaction_id": transaction.transaction_id, "status": TransactionStatus.EDITED}
         )
         self.persistence.update_transaction(updated_record)
+        amount = f"Rp{updated_record.amount:,}".replace(",", ".")
         return BotResponse(
-            f"Updated: {updated_record.type.value.title()} Rp{updated_record.amount:,}".replace(",", "."),
+            "\n".join(
+                [
+                    "Sudah kuubah transaksi ini:",
+                    f"- Jenis: {updated_record.type.value.replace('_', ' ')}",
+                    f"- Nominal: {amount}",
+                    f"- Kategori: {updated_record.category or '-'}",
+                    f"- Subkategori: {updated_record.subcategory or '-'}",
+                    f"- Metode: {updated_record.payment_method or updated_record.account_from or '-'}",
+                    f"- Tanggal: {updated_record.transaction_date.isoformat()}",
+                    f"- Catatan: {updated_record.description or '-'}",
+                ]
+            ),
             reply_context=ReplyMessageContext(kind="saved", transaction_id=updated_record.transaction_id),
         )
 
     def _handle_read_command(self, message_text: str, message_datetime: datetime | None) -> BotResponse:
         transactions = self.queries.filter_transactions(message_text, message_datetime)
         if not transactions:
-            return BotResponse("No transactions matched that query.")
-        lines = ["Matched transactions:"]
+            return BotResponse("Aku belum nemu transaksi yang cocok dengan permintaan itu.")
+        lines = ["Ini transaksi yang ketemu:"]
         for item in transactions[:10]:
             amount = f"Rp{item.amount:,}".replace(",", ".")
             lines.append(
                 f"- {item.transaction_date.isoformat()} {item.category}/{item.subcategory or '-'} {amount} via {item.payment_method or item.account_from or '-'} ({item.status.value})"
             )
         if len(transactions) > 10:
-            lines.append(f"...and {len(transactions) - 10} more")
+            lines.append(f"...dan masih ada {len(transactions) - 10} transaksi lagi.")
         return BotResponse("\n".join(lines))
 
     def _handle_budget_set(self, command: ParsedCommand) -> BotResponse:
         if command.amount is None or command.amount <= 0:
-            return BotResponse("Budget amount is missing. Example: set monthly food budget 500000")
+            return BotResponse("Nominal budgetnya belum jelas. Contoh: `set monthly food budget 500000`.")
         rule = BudgetRule(
             scope=command.target or ("category" if command.category else "global"),
             period=command.period or "monthly",
@@ -233,19 +263,19 @@ class CommandService:
         label = f"{rule.period} {rule.scope}"
         if rule.category:
             label += f" for {rule.category}"
-        return BotResponse(f"Saved {label} budget: Rp{rule.limit_amount:,}".replace(",", "."))
+        return BotResponse(f"Budget {label} sudah kusimpan: Rp{rule.limit_amount:,}".replace(",", "."))
 
     def _handle_budget_show(self, command: ParsedCommand, message_datetime: datetime | None) -> BotResponse:
         transactions = self.queries.filter_transactions(command.period or "month", message_datetime)
         rules = self.runtime.finance_repository.list_budget_rules()
         if not rules:
-            return BotResponse("No budget rules set yet.")
+            return BotResponse("Belum ada budget yang tersimpan.")
         total_expense = sum(
             item.amount
             for item in transactions
             if item.type in {TransactionType.EXPENSE, TransactionType.INVESTMENT_OUT} and item.status != TransactionStatus.DELETED
         )
-        lines = ["Budget status:"]
+        lines = ["Status budget saat ini:"]
         for rule in rules:
             if rule.scope == "global":
                 used = total_expense
@@ -256,9 +286,11 @@ class CommandService:
                     if item.category.lower() == rule.category.lower() and item.status != TransactionStatus.DELETED
                 )
             remaining = rule.limit_amount - used
-            status = "OVER" if remaining < 0 else "OK"
+            status = "Melebihi budget" if remaining < 0 else "Masih aman"
             lines.append(
-                f"- {rule.period} {rule.scope} {rule.category or 'all'}: used Rp{used:,}, remaining Rp{remaining:,} [{status}]".replace(",", ".")
+                f"- {rule.period} {rule.scope} {rule.category or 'semua'}: terpakai Rp{used:,}, sisa Rp{remaining:,} [{status}]".replace(
+                    ",", "."
+                )
             )
         return BotResponse("\n".join(lines))
 
@@ -273,3 +305,34 @@ class CommandService:
             transactions=transactions,
         )
         return BotResponse(comparison)
+
+    def _handle_natural_summary(self, command: ParsedCommand, message_datetime: datetime | None) -> BotResponse:
+        period = command.period or "month"
+        reference_day = self.runtime.date_parser.reference_date(message_datetime)
+        if period == "today":
+            target_day = FinanceBotPolicy.normalize_day(reference_day.isoformat())
+            transactions = [item for item in self.queries.load_transactions() if item.transaction_date == target_day]
+            period_label = target_day.isoformat()
+            summary = self.runtime.summary_service.build_period_summary(period_label=period_label, transactions=transactions, budgets=[])
+            self.persistence.replace_summary(summary)
+            return BotResponse(
+                self.runtime.summary_service.format_monthly_summary_message(summary),
+                reply_context=ReplyMessageContext(kind="summary", month=period_label),
+            )
+        if period == "week":
+            week_start, week_end, label = FinanceBotPolicy.normalize_week(reference_day.isoformat())
+            transactions = [item for item in self.queries.load_transactions() if week_start <= item.transaction_date <= week_end]
+            summary = self.runtime.summary_service.build_period_summary(period_label=label, transactions=transactions, budgets=[])
+            self.persistence.replace_summary(summary)
+            return BotResponse(
+                self.runtime.summary_service.format_monthly_summary_message(summary),
+                reply_context=ReplyMessageContext(kind="summary", month=label),
+            )
+        normalized_month = FinanceBotPolicy.normalize_month(reference_day.strftime("%Y-%m"))
+        transactions = self.queries.load_transactions()
+        summary = self.runtime.summary_service.build_monthly_summary(month=normalized_month, transactions=transactions, budgets=[])
+        self.persistence.replace_summary(summary)
+        return BotResponse(
+            self.runtime.summary_service.format_monthly_summary_message(summary),
+            reply_context=ReplyMessageContext(kind="summary", month=normalized_month),
+        )

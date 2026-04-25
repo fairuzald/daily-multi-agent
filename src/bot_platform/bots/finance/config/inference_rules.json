@@ -1,0 +1,66 @@
+{
+  "income": {
+    "default_category": "Income",
+    "keyword_categories": [
+      {
+        "category": "Salary",
+        "keywords": ["gaji", "salary", "payroll"]
+      },
+      {
+        "category": "Refund",
+        "keywords": ["refund", "cashback"]
+      }
+    ],
+    "default_subcategory": "Income",
+    "default_description": "Income transaction"
+  },
+  "investment_in": {
+    "default_category": "Investment In",
+    "default_subcategory": "Investment Return",
+    "default_description": "Investment cash in"
+  },
+  "investment_out": {
+    "default_category": "Investment Out",
+    "default_subcategory": "Investment Purchase",
+    "default_description": "Investment cash out"
+  },
+  "expense": {
+    "default_category": "General Expense",
+    "keyword_categories": [
+      {
+        "category": "Coffee",
+        "keywords": ["kopi", "coffee", "cafe", "tomoro", "starbucks", "jabarano"]
+      },
+      {
+        "category": "Meals",
+        "keywords": ["makan", "meal", "resto", "restaurant", "dine"]
+      },
+      {
+        "category": "Snacks",
+        "keywords": ["snack", "cemilan"]
+      },
+      {
+        "category": "Electricity Bill",
+        "keywords": ["pln", "listrik", "electricity", "token listrik"]
+      },
+      {
+        "category": "Internet",
+        "keywords": ["wifi", "internet", "indihome", "biznet"]
+      },
+      {
+        "category": "Subscription",
+        "keywords": ["spotify", "netflix", "youtube premium", "subscription", "langganan"]
+      },
+      {
+        "category": "Transport",
+        "keywords": ["transport", "grab", "gocar", "gojek", "bensin", "fuel", "parking", "parkir"]
+      },
+      {
+        "category": "Transfer",
+        "keywords": ["transfer"]
+      }
+    ],
+    "default_subcategory": "General",
+    "default_description_suffix": "transaction"
+  }
+}

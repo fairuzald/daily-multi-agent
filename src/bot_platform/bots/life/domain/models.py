@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from uuid import uuid4
 
@@ -30,6 +30,7 @@ class ParsedLifeItem(BaseModel):
     remind_at: datetime | None = None
     all_day: bool = True
     recurrence: str = ""
+    recurrence_until: date | None = None
     raw_input: str
 
 
@@ -52,6 +53,7 @@ class LifeItem(BaseModel):
     remind_at: datetime | None = None
     all_day: bool = True
     recurrence: str = ""
+    recurrence_until: date | None = None
     raw_input: str = ""
     calendar_event_id: str = ""
     calendar_event_url: str = ""
