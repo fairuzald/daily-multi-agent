@@ -54,6 +54,12 @@ Main docs:
 - Setup: [src/bot_platform/bots/life/SETUP.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/life/SETUP.md)
 - Development: [src/bot_platform/bots/life/DEVELOPMENT.md](/home/fairuz/Documents/learn/bot-finance-telegram/src/bot_platform/bots/life/DEVELOPMENT.md)
 
+## Setup
+
+- Start here: [docs/setup.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup.md)
+- Local onboarding: [docs/setup-local.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup-local.md)
+- Production onboarding: [docs/setup-production.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup-production.md)
+
 ## Architecture
 
 - Pipeline overview: [docs/bot-pipelines.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/bot-pipelines.md)
@@ -90,6 +96,9 @@ Set the life webhook:
 ```bash
 make BOT=2 webhook-set-dev
 ```
+
+For a full clone-to-running guide, use [docs/setup-local.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup-local.md).
+For deployment and production webhooks, use [docs/setup-production.md](/home/fairuz/Documents/learn/bot-finance-telegram/docs/setup-production.md).
 
 ## Runtime Notes
 
